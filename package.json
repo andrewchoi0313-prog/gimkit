@@ -1,0 +1,9 @@
+{
+  "name": "brain-bucks",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A simple quiz game: answer questions, earn cash, buy upgrades, reach the goal.",
+  "scripts": {
+    "test": "node --test"
+  }
+}

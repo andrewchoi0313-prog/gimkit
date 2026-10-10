@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Brain Bucks</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="app">
+    <section id="start-screen" class="screen card center">
+      <div class="logo" aria-hidden="true">💰</div>
+      <h1>Brain Bucks</h1>
+      <p class="tagline">Answer questions. Earn cash. Buy upgrades. Reach <strong id="goal-text">$10K</strong> to win.</p>
+      <ul class="how-to">
+        <li><span>✅</span> Right answers earn cash. Wrong ones cost you and reset your streak.</li>
+        <li><span>🛒</span> Spend cash in the shop to earn faster.</li>
+        <li><span>⌨️</span> Press <kbd>1</kbd>–<kbd>4</kbd> to answer, <kbd>S</kbd> to open the shop.</li>
+      </ul>
+      <button id="start-btn" class="btn primary big">Start game</button>
+      <p id="best-text" class="muted" hidden></p>
+    </section>
+
+    <section id="play-screen" class="screen" hidden>
+      <header class="hud">
+        <div class="hud-row">
+          <div>
+            <div class="label">Cash</div>
+            <div id="cash" class="cash">$0</div>
+          </div>
+          <div class="streak" title="Current streak">🔥 <span id="streak">0</span></div>
+          <button id="shop-btn" class="btn shop-btn">🛒 Shop</button>
+        </div>
+        <div id="progress" class="progress" role="progressbar" aria-label="Progress to goal" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <div id="progress-fill" class="progress-fill"></div>
+        </div>
+        <div class="progress-label"><span id="progress-text">0%</span> of <span id="goal-label">$10K</span></div>
+      </header>
+
+      <div class="card question">
+        <h2 id="prompt" class="prompt"></h2>
+        <div class="choices">
+          <button class="choice c0" data-index="0"><kbd>1</kbd><span class="choice-text"></span></button>
+          <button class="choice c1" data-index="1"><kbd>2</kbd><span class="choice-text"></span></button>
+          <button class="choice c2" data-index="2"><kbd>3</kbd><span class="choice-text"></span></button>
+          <button class="choice c3" data-index="3"><kbd>4</kbd><span class="choice-text"></span></button>
+        </div>
+      </div>
+
+      <div id="feedback" class="feedback" hidden>
+        <p id="feedback-text" class="feedback-text" aria-live="polite"></p>
+        <div class="feedback-actions">
+          <button id="feedback-shop-btn" class="btn">🛒 Shop</button>
+          <button id="next-btn" class="btn primary">Next question →</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="shop-screen" class="screen" hidden>
+      <header class="shop-header card">
+        <div>
+          <div class="label">Cash</div>
+          <div id="shop-cash" class="cash">$0</div>
+          <div class="muted">Next correct answer: <strong id="shop-reward">$10</strong></div>
+        </div>
+        <button id="back-btn" class="btn primary">← Back to questions</button>
+      </header>
+      <div id="upgrades" class="upgrades"></div>
+    </section>
+
+    <section id="win-screen" class="screen card center" hidden>
+      <div class="logo" aria-hidden="true">🏆</div>
+      <h1>You reached <span id="win-goal">$10K</span>!</h1>
+      <p id="record-text" class="record" hidden>New personal best!</p>
+      <dl class="stats">
+        <div><dt>Time</dt><dd id="stat-time"></dd></div>
+        <div><dt>Questions</dt><dd id="stat-questions"></dd></div>
+        <div><dt>Accuracy</dt><dd id="stat-accuracy"></dd></div>
+        <div><dt>Best streak</dt><dd id="stat-streak"></dd></div>
+      </dl>
+      <button id="again-btn" class="btn primary big">Play again</button>
+    </section>
+  </main>
+
+  <script src="src/game.js"></script>
+  <script src="src/questions.js"></script>
+  <script src="src/main.js"></script>
+</body>
+</html>
