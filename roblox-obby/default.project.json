@@ -1,0 +1,34 @@
+{
+  "name": "LavaLeap",
+  "tree": {
+    "$className": "DataModel",
+    "Workspace": {
+      "$className": "Workspace"
+    },
+    "Lighting": {
+      "$className": "Lighting",
+      "$properties": {
+        "ClockTime": 16.5,
+        "GlobalShadows": true
+      }
+    },
+    "ReplicatedStorage": {
+      "$className": "ReplicatedStorage"
+    },
+    "ServerScriptService": {
+      "$className": "ServerScriptService",
+      "LavaLeapServer": {
+        "$path": "src/server/LavaLeapServer.server.luau"
+      }
+    },
+    "StarterPlayer": {
+      "$className": "StarterPlayer",
+      "StarterPlayerScripts": {
+        "$className": "StarterPlayerScripts",
+        "LavaLeapClient": {
+          "$path": "src/client/LavaLeapClient.client.luau"
+        }
+      }
+    }
+  }
+}
