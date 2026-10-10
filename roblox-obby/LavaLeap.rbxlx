@@ -689,7 +689,7 @@ remote.OnServerEvent:Connect(function(player, action)
 	state.lastRestart = os.clock()
 	state.stage.Value = 1
 	startRun(player, state)
-	player:LoadCharacter()
+	player:LoadCharacterAsync()
 end)
 
 Players.PlayerAdded:Connect(onPlayerAdded)

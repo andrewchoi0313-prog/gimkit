@@ -51,3 +51,9 @@ rojo build default.project.json -o LavaLeap.rbxlx
 ```
 
 With Rojo's Studio plugin, `rojo serve` live-syncs the scripts into Studio as you edit them.
+
+Both scripts use `--!strict` and type-check cleanly with [luau-lsp](https://github.com/JohnnyMorganz/luau-lsp) against Roblox's API definitions:
+
+```sh
+luau-lsp analyze --platform=roblox --definitions=@roblox=globalTypes.None.d.luau src/server/*.luau src/client/*.luau
+```
