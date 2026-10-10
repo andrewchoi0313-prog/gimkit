@@ -2,34 +2,43 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Brain Bucks</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Figtree:wght@400;600;700;800&display=swap">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <main class="app">
-    <section id="start-screen" class="screen card center">
-      <div class="logo" aria-hidden="true">💰</div>
+    <section id="start-screen" class="screen note">
+      <div class="note-corner" aria-hidden="true"><span class="coin">$</span><span class="denom" id="goal-denom">10K</span></div>
       <h1>Brain Bucks</h1>
-      <p class="tagline">Answer questions. Earn cash. Buy upgrades. Reach <strong id="goal-text">$10K</strong> to win.</p>
-      <ul class="how-to">
-        <li><span>✅</span> Right answers earn cash. Wrong ones cost you and reset your streak.</li>
-        <li><span>🛒</span> Spend cash in the shop to earn faster.</li>
-        <li><span>⌨️</span> Press <kbd>1</kbd>–<kbd>4</kbd> to answer, <kbd>S</kbd> to open the shop.</li>
-      </ul>
-      <button id="start-btn" class="btn primary big">Start game</button>
-      <p id="best-text" class="muted" hidden></p>
+      <p class="tagline">Answer questions to earn cash, then spend it on upgrades so you earn faster. Reach <strong id="goal-text">$10K</strong> to win.</p>
+      <ol class="loop">
+        <li><b>Answer</b>Trivia and quick math. Wrong answers cost cash.</li>
+        <li><b>Stack</b>Correct answers in a row pay a streak bonus.</li>
+        <li><b>Upgrade</b>Buy upgrades in the shop to multiply your earnings.</li>
+      </ol>
+      <div class="start-row">
+        <button id="start-btn" class="btn gold big">Start game</button>
+        <p class="keys"><kbd>1</kbd>–<kbd>4</kbd> answer · <kbd>Enter</kbd> next · <kbd>S</kbd> shop</p>
+      </div>
+      <p id="best-text" class="best" hidden></p>
     </section>
 
     <section id="play-screen" class="screen" hidden>
       <header class="hud">
         <div class="hud-row">
-          <div>
+          <div class="hud-cash">
             <div class="label">Cash</div>
             <div id="cash" class="cash">$0</div>
           </div>
-          <div class="streak" title="Current streak">🔥 <span id="streak">0</span></div>
-          <button id="shop-btn" class="btn shop-btn">🛒 Shop</button>
+          <div class="hud-streak">
+            <div class="label">Streak</div>
+            <div class="streak"><span id="streak">0</span></div>
+          </div>
+          <button id="shop-btn" class="btn ghost">Shop</button>
         </div>
         <div id="progress" class="progress" role="progressbar" aria-label="Progress to goal" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
           <div id="progress-fill" class="progress-fill"></div>
@@ -47,38 +56,38 @@
         </div>
       </div>
 
-      <div id="feedback" class="feedback" hidden>
+      <div id="feedback" class="card feedback" hidden>
         <p id="feedback-text" class="feedback-text" aria-live="polite"></p>
         <div class="feedback-actions">
-          <button id="feedback-shop-btn" class="btn">🛒 Shop</button>
-          <button id="next-btn" class="btn primary">Next question →</button>
+          <button id="feedback-shop-btn" class="btn quiet">Shop</button>
+          <button id="next-btn" class="btn ink">Next question →</button>
         </div>
       </div>
     </section>
 
     <section id="shop-screen" class="screen" hidden>
-      <header class="shop-header card">
+      <header class="shop-header">
         <div>
-          <div class="label">Cash</div>
+          <div class="label">Cash to spend</div>
           <div id="shop-cash" class="cash">$0</div>
-          <div class="muted">Next correct answer: <strong id="shop-reward">$10</strong></div>
+          <div class="shop-reward">Next correct answer pays <strong id="shop-reward">$10</strong></div>
         </div>
-        <button id="back-btn" class="btn primary">← Back to questions</button>
+        <button id="back-btn" class="btn gold">← Back to questions</button>
       </header>
       <div id="upgrades" class="upgrades"></div>
     </section>
 
-    <section id="win-screen" class="screen card center" hidden>
-      <div class="logo" aria-hidden="true">🏆</div>
-      <h1>You reached <span id="win-goal">$10K</span>!</h1>
-      <p id="record-text" class="record" hidden>New personal best!</p>
+    <section id="win-screen" class="screen note" hidden>
+      <div class="note-corner" aria-hidden="true"><span class="coin">$</span><span class="denom" id="win-denom">10K</span></div>
+      <h1>You reached <span id="win-goal">$10K</span></h1>
+      <p id="record-text" class="record" hidden>New personal best</p>
       <dl class="stats">
         <div><dt>Time</dt><dd id="stat-time"></dd></div>
         <div><dt>Questions</dt><dd id="stat-questions"></dd></div>
         <div><dt>Accuracy</dt><dd id="stat-accuracy"></dd></div>
         <div><dt>Best streak</dt><dd id="stat-streak"></dd></div>
       </dl>
-      <button id="again-btn" class="btn primary big">Play again</button>
+      <button id="again-btn" class="btn gold big">Play again</button>
     </section>
   </main>
 

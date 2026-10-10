@@ -60,7 +60,7 @@
     if (result.correct) {
       text.className = 'feedback-text good';
       text.textContent = `Correct! +${G.formatCash(result.delta)}` +
-        (result.streak > 1 ? ` · ${result.streak} in a row 🔥` : '');
+        (result.streak > 1 ? ` · ${result.streak} in a row` : '');
     } else {
       const answer = current.choices[current.answerIndex];
       text.className = 'feedback-text bad';
@@ -68,7 +68,7 @@
         (result.delta < 0 ? G.formatCash(result.delta) : 'No cash lost.');
     }
     if (result.won) {
-      text.textContent += ' 🎉 Goal reached!';
+      text.textContent += ' Goal reached!';
       $('next-btn').textContent = 'See results →';
     } else {
       $('next-btn').textContent = 'Next question →';
@@ -119,7 +119,7 @@
         <p class="muted desc"></p>
         <div class="pips" aria-hidden="true"></div>
         <p class="values"></p>
-        <button class="btn primary buy"></button>`;
+        <button class="btn ink buy"></button>`;
       card.querySelector('h3').textContent = u.name;
       card.querySelector('.desc').textContent = u.description;
       card.querySelector('.buy').addEventListener('click', () => {
@@ -230,6 +230,8 @@
   const goal = G.formatCash(G.DEFAULT_GOAL);
   $('goal-text').textContent = goal;
   $('goal-label').textContent = goal;
+  $('goal-denom').textContent = goal.slice(1);
+  $('win-denom').textContent = goal.slice(1);
   buildShop();
   showStart();
 })();
