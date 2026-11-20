@@ -31,3 +31,10 @@ npm test   # runs the rule and question tests with Node's built-in test runner
 | `src/main.js` | Connects the rules to the page |
 
 To add trivia, append `[prompt, correctAnswer, wrong1, wrong2, wrong3]` to `TRIVIA` in `src/questions.js`. To tune the pace, edit the upgrade `levels` or `DEFAULT_GOAL` in `src/game.js`.
+
+## More games in this repo
+
+| Folder | Game |
+| --- | --- |
+| [`beacon-isle/`](beacon-isle/) | **Beacon Isle**: a 3D island adventure for the browser. Find five lens shards and relight the lighthouse. Open `beacon-isle/index.html` to play. |
+| [`roblox-obby/`](roblox-obby/) | **Lava Leap**: a 10-stage Roblox obby over a sea of lava. |
