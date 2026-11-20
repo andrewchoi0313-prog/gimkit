@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Riftstead</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Titan+One&family=Nunito:wght@600;800&display=swap">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="game" class="game">
+    <canvas id="scene" class="scene" aria-label="The world of Riftstead"></canvas>
+
+    <div id="hud" class="hud" hidden>
+      <div class="hud-top">
+        <div class="status">
+          <div id="hearts" class="hearts" role="img" aria-label="Hearts"></div>
+          <div class="counts">
+            <span class="count" title="Rift crystals">
+              <svg class="icon" viewBox="0 0 20 20" aria-hidden="true"><path class="fill-tide" d="M10 1 16 10 10 19 4 10Z"/><path class="fill-shine" d="M10 1 12.4 10 10 19 7.6 10Z"/></svg>
+              <b id="crystal-count">0</b><span class="of">of 3</span>
+            </span>
+            <span id="zone-name" class="count zone-name">The Stead</span>
+          </div>
+          <p id="objective" class="objective"></p>
+        </div>
+        <div id="boss" class="boss" hidden>
+          <span class="boss-name">The Stone Giant</span>
+          <div class="boss-bar"><div id="boss-fill" class="boss-fill"></div></div>
+        </div>
+        <div class="corner">
+          <canvas id="minimap" class="minimap" width="300" height="300" aria-label="Map"></canvas>
+          <div class="corner-buttons">
+            <span id="clock" class="chip clock">Day</span>
+            <button id="mute-btn" class="chip" type="button">Sound on</button>
+            <button id="pause-btn" class="chip" type="button">Pause</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+      <div id="prompt" class="prompt" hidden><kbd>E</kbd><span id="prompt-text"></span></div>
+
+      <p id="bar-hint" class="bar-hint" hidden></p>
+      <div id="bar" class="bar">
+        <button id="mode-btn" class="mode-btn" type="button"><kbd>B</kbd><span id="mode-text">Build</span></button>
+        <div id="slots" class="slots"></div>
+        <button id="erase-btn" class="mode-btn quiet" type="button" hidden><kbd>X</kbd><span id="erase-text">Remove</span></button>
+      </div>
+
+      <div id="talk" class="talk" hidden>
+        <p id="talk-name" class="talk-name"></p>
+        <p id="talk-text" class="talk-text"></p>
+        <p class="talk-more"><span class="for-keys"><kbd>E</kbd> or click to continue</span><span class="for-touch">Tap to continue</span></p>
+      </div>
+
+      <div id="touch" class="touch" hidden>
+        <div id="stick" class="stick" aria-label="Move"><div id="stick-knob" class="stick-knob"></div></div>
+        <div class="touch-buttons">
+          <button id="btn-use" class="touch-btn use" type="button" hidden>Use</button>
+          <button id="btn-swing" class="touch-btn" type="button">Swing</button>
+          <button id="btn-jump" class="touch-btn jump" type="button">Jump</button>
+        </div>
+      </div>
+    </div>
+
+    <section id="title" class="screen title-screen">
+      <div class="card title-card">
+        <h1>Riftstead</h1>
+        <p class="pitch">Build a home on the Stead, step through portals to three strange worlds, win weapons from the monsters there, and topple the giant in the fortress.</p>
+        <div class="actions">
+          <button id="start-btn" class="btn primary" type="button">Start a new world</button>
+          <button id="new-btn" class="btn" type="button" hidden>New world</button>
+        </div>
+        <p id="title-note" class="note" hidden></p>
+        <dl class="controls">
+          <div><dt>Move</dt><dd><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dd></div>
+          <div><dt>Look</dt><dd>Drag, or <kbd>←</kbd><kbd>→</kbd></dd></div>
+          <div><dt>Jump, run</dt><dd><kbd>Space</kbd> <kbd>Shift</kbd></dd></div>
+          <div><dt>Fight</dt><dd><kbd>F</kbd> or click</dd></div>
+          <div><dt>Build</dt><dd><kbd>B</kbd>, then click</dd></div>
+          <div><dt>Talk, doors</dt><dd><kbd>E</kbd></dd></div>
+        </dl>
+        <p class="touch-note">On a touch screen, steer with the left thumb, drag to look, and tap Build to place blocks.</p>
+      </div>
+    </section>
+
+    <section id="pause" class="screen" hidden>
+      <div class="card">
+        <h2>Paused</h2>
+        <dl class="controls">
+          <div><dt>Move</dt><dd><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dd></div>
+          <div><dt>Look</dt><dd>Drag, or <kbd>←</kbd><kbd>→</kbd></dd></div>
+          <div><dt>Jump, run</dt><dd><kbd>Space</kbd> <kbd>Shift</kbd></dd></div>
+          <div><dt>Fight</dt><dd><kbd>F</kbd> or click</dd></div>
+          <div><dt>Build or fight</dt><dd><kbd>B</kbd></dd></div>
+          <div><dt>Pick a slot</dt><dd><kbd>1</kbd>–<kbd>7</kbd>, or <kbd>Q</kbd></dd></div>
+          <div><dt>Place a block</dt><dd>Click</dd></div>
+          <div><dt>Remove a block</dt><dd>Right-click, or <kbd>X</kbd></dd></div>
+          <div><dt>Talk, doors</dt><dd><kbd>E</kbd></dd></div>
+          <div><dt>Zoom, sound</dt><dd>Wheel, <kbd>M</kbd></dd></div>
+        </dl>
+        <div class="actions">
+          <button id="resume-btn" class="btn primary" type="button">Resume</button>
+          <button id="restart-btn" class="btn" type="button">Start over</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="win" class="screen win-screen" hidden>
+      <div class="card">
+        <h2>The giant has fallen</h2>
+        <p class="pitch">The fortress is quiet and the Stead is safe. Your home is still standing, and the portals are still open.</p>
+        <dl class="stats">
+          <div><dt>Time</dt><dd id="stat-time"></dd></div>
+          <div><dt>Monsters beaten</dt><dd id="stat-kills"></dd></div>
+          <div><dt>Blocks placed</dt><dd id="stat-placed"></dd></div>
+          <div><dt>Times knocked out</dt><dd id="stat-deaths"></dd></div>
+        </dl>
+        <div class="actions">
+          <button id="explore-btn" class="btn primary" type="button">Keep playing</button>
+        </div>
+      </div>
+    </section>
+
+    <div id="fade" class="fade"></div>
+  </div>
+
+  <script src="vendor/three.min.js"></script>
+  <script src="src/zones.js"></script>
+  <script src="src/rules.js"></script>
+  <script src="src/blocks.js"></script>
+  <script src="src/physics.js"></script>
+  <script src="src/gfx.js"></script>
+  <script src="src/sound.js"></script>
+  <script src="src/input.js"></script>
+  <script src="src/actors.js"></script>
+  <script src="src/world.js"></script>
+  <script src="src/builder.js"></script>
+  <script src="src/ui.js"></script>
+  <script src="src/monsters.js"></script>
+  <script src="src/boss.js"></script>
+  <script src="src/main.js"></script>
+</body>
+</html>
