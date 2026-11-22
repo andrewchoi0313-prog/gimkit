@@ -31,3 +31,12 @@ npm test   # runs the rule and question tests with Node's built-in test runner
 | `src/main.js` | Connects the rules to the page |
 
 To add trivia, append `[prompt, correctAnswer, wrong1, wrong2, wrong3]` to `TRIVIA` in `src/questions.js`. To tune the pace, edit the upgrade `levels` or `DEFAULT_GOAL` in `src/game.js`.
+
+## More games in this repo
+
+| Folder | Game |
+| --- | --- |
+| [`beacon-isle/`](beacon-isle/) | **Beacon Isle**: a 3D island adventure for the browser. Find five lens shards and relight the lighthouse. Open `beacon-isle/index.html` to play. |
+| [`riftstead/`](riftstead/) | **Riftstead**: a 3D building and adventure game for the browser. Build a house from blocks, cross portals to three other worlds, win weapons from monsters and beat the Stone Giant. Open `riftstead/index.html` to play. |
+| [`wildshore/`](wildshore/) | **Wildshore**: a free-roaming 3D adventure for the browser. Seven islands, a furnished house, a boat, wild animals to hunt and monsters that only come out at night. Open `wildshore/index.html` to play. |
+| [`roblox-obby/`](roblox-obby/) | **Lava Leap**: a 10-stage Roblox obby over a sea of lava. |

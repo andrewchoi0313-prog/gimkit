@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Beacon Isle</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caprasimo&family=Nunito:wght@600;800&display=swap">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="game" class="game">
+    <canvas id="scene" class="scene" aria-label="The island of Beacon Isle"></canvas>
+
+    <div id="hud" class="hud" hidden>
+      <div class="hud-top">
+        <div class="status">
+          <div id="hearts" class="hearts" role="img" aria-label="Hearts"></div>
+          <div class="counts">
+            <span class="count" title="Lens shards">
+              <svg class="icon" viewBox="0 0 20 20" aria-hidden="true"><path class="fill-tide" d="M10 1 16 10 10 19 4 10Z"/><path class="fill-shine" d="M10 1 12.4 10 10 19 7.6 10Z"/></svg>
+              <b id="shard-count">0</b><span class="of">of 5</span>
+            </span>
+            <span class="count" title="Coins">
+              <svg class="icon" viewBox="0 0 20 20" aria-hidden="true"><circle class="fill-lamp" cx="10" cy="10" r="8"/><circle class="ring-lamp" cx="10" cy="10" r="5"/></svg>
+              <b id="coin-count">0</b>
+            </span>
+            <span id="key-badge" class="count" hidden>
+              <svg class="icon" viewBox="0 0 20 20" aria-hidden="true"><circle class="ring-key" cx="6.5" cy="10" r="3.6"/><path class="line-key" d="M10 10h8M15 10v3.4M18 10v2.6"/></svg>
+              Vault key
+            </span>
+          </div>
+          <p id="objective" class="objective"></p>
+        </div>
+        <div class="corner">
+          <canvas id="minimap" class="minimap" width="300" height="300" aria-label="Map of the isle"></canvas>
+          <div class="corner-buttons">
+            <button id="mute-btn" class="chip" type="button">Sound on</button>
+            <button id="pause-btn" class="chip" type="button">Pause</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+      <div id="prompt" class="prompt" hidden><kbd>E</kbd><span id="prompt-text"></span></div>
+
+      <div id="talk" class="talk" hidden>
+        <p id="talk-name" class="talk-name"></p>
+        <p id="talk-text" class="talk-text"></p>
+        <p class="talk-more"><span class="for-keys"><kbd>E</kbd> or click to continue</span><span class="for-touch">Tap to continue</span></p>
+      </div>
+
+      <div id="touch" class="touch" hidden>
+        <div id="stick" class="stick" aria-label="Move"><div id="stick-knob" class="stick-knob"></div></div>
+        <div class="touch-buttons">
+          <button id="btn-use" class="touch-btn use" type="button" hidden>Use</button>
+          <button id="btn-swing" class="touch-btn" type="button">Swing</button>
+          <button id="btn-jump" class="touch-btn jump" type="button">Jump</button>
+        </div>
+      </div>
+    </div>
+
+    <section id="title" class="screen title-screen">
+      <div class="card title-card">
+        <h1>Beacon Isle</h1>
+        <p class="pitch">A storm shattered the lighthouse lens and flung it across the isle. Find the five shards and relight the beacon before the ships sail home in the dark.</p>
+        <div class="actions">
+          <button id="start-btn" class="btn primary" type="button">Start adventure</button>
+          <button id="new-btn" class="btn" type="button" hidden>New game</button>
+        </div>
+        <p id="title-note" class="note" hidden></p>
+        <dl class="controls">
+          <div><dt>Move</dt><dd><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dd></div>
+          <div><dt>Look</dt><dd>Drag, or <kbd>←</kbd><kbd>→</kbd></dd></div>
+          <div><dt>Jump</dt><dd><kbd>Space</kbd></dd></div>
+          <div><dt>Run</dt><dd><kbd>Shift</kbd></dd></div>
+          <div><dt>Swing staff</dt><dd><kbd>F</kbd> or click</dd></div>
+          <div><dt>Talk, use</dt><dd><kbd>E</kbd></dd></div>
+        </dl>
+        <p class="touch-note">On a touch screen, steer with the left thumb, drag to look, and use the buttons on the right.</p>
+      </div>
+    </section>
+
+    <section id="pause" class="screen" hidden>
+      <div class="card">
+        <h2>Paused</h2>
+        <dl class="controls">
+          <div><dt>Move</dt><dd><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dd></div>
+          <div><dt>Look</dt><dd>Drag, or <kbd>←</kbd><kbd>→</kbd></dd></div>
+          <div><dt>Jump</dt><dd><kbd>Space</kbd></dd></div>
+          <div><dt>Run</dt><dd><kbd>Shift</kbd></dd></div>
+          <div><dt>Swing staff</dt><dd><kbd>F</kbd> or click</dd></div>
+          <div><dt>Talk, use</dt><dd><kbd>E</kbd></dd></div>
+          <div><dt>Zoom</dt><dd>Mouse wheel</dd></div>
+          <div><dt>Sound</dt><dd><kbd>M</kbd></dd></div>
+        </dl>
+        <div class="actions">
+          <button id="resume-btn" class="btn primary" type="button">Resume</button>
+          <button id="restart-btn" class="btn" type="button">Start over</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="win" class="screen win-screen" hidden>
+      <div class="card">
+        <h2>The beacon shines again</h2>
+        <p class="pitch">The beam sweeps over the water, the gloom is gone, and the first ships are already turning for the harbour.</p>
+        <dl class="stats">
+          <div><dt>Time</dt><dd id="stat-time"></dd></div>
+          <div><dt>Coins left</dt><dd id="stat-coins"></dd></div>
+          <div><dt>Gloomlings scattered</dt><dd id="stat-defeated"></dd></div>
+          <div><dt>Times fainted</dt><dd id="stat-faints"></dd></div>
+        </dl>
+        <div class="actions">
+          <button id="explore-btn" class="btn primary" type="button">Keep exploring</button>
+          <button id="again-btn" class="btn" type="button">Play again</button>
+        </div>
+      </div>
+    </section>
+
+    <div id="fade" class="fade"></div>
+  </div>
+
+  <script src="vendor/three.min.js"></script>
+  <script src="src/island.js"></script>
+  <script src="src/rules.js"></script>
+  <script src="src/gfx.js"></script>
+  <script src="src/sound.js"></script>
+  <script src="src/input.js"></script>
+  <script src="src/actors.js"></script>
+  <script src="src/world.js"></script>
+  <script src="src/ui.js"></script>
+  <script src="src/main.js"></script>
+</body>
+</html>
