@@ -23,6 +23,8 @@
       zoom: 0,
       swingHeld: false,
       jumpHeld: false,
+      dive: false,       // Shift, or the on-screen Swing button held: dive when swimming
+      swingTouch: false, // the on-screen Swing button is down
       // These are set for one frame after a press:
       jump: false,
       swing: false,
@@ -175,6 +177,8 @@
       input.run = !!(keys.ShiftLeft || keys.ShiftRight || touchRun);
       input.swingHeld = !!(keys.KeyF || keys.KeyJ || touchSwing);
       input.jumpHeld = !!(keys.Space || touchJump);
+      input.dive = !!(keys.ShiftLeft || keys.ShiftRight || touchSwing);
+      input.swingTouch = touchSwing;
     };
 
     // Call once per frame, after reading.

@@ -98,7 +98,7 @@
   let islandClock = 0;
   let fade = null;         // { t, action }
   let lastMood = -1;
-  let tips = { monster: false, weapon: false, meat: false };
+  let tips = { monster: false, shark: false, weapon: false, meat: false };
   let chokeClock = 0;      // time until the next heart is lost for want of air
   let swimTilt = 0;        // 0 standing, 1 stretched out swimming
   let underView = false;   // is the camera under water?
@@ -170,7 +170,7 @@
     lines: [
       'Welcome home. The fire is lit and the bed is upstairs.',
       input.touch ? 'Sheep, cows, pigs, deer, chickens and fish live wild out here. Hunt one for meat, then tap Eat when you are hurt.' : 'Sheep, cows, pigs, deer, chickens and fish live wild out here. Hunt one for meat, then press R to eat when you are hurt.',
-      'You can swim: Space swims up and ' + (input.touch ? 'holding Swing' : 'Shift') + ' dives. There is coral down there. You can hold your breath for ten seconds, and there are sharks in the deep water. The snorkel mask on this table lets you stay under as long as you like.',
+      (input.touch ? 'You can swim: in the water the buttons turn into Up and Dive.' : 'You can swim: Space swims up and Shift dives.') + ' There is coral down there. You can hold your breath for ten seconds, and there are sharks in the deep water. The snorkel mask on this table lets you stay under as long as you like.',
       'Nothing dangerous walks by day. At night the monsters come out, and they are gone again by morning. Sleep in the bed to skip the dark, or fight: they drop weapons.',
       'The boat is tied up at the dock, south of the door. Six more islands lie across the water, and each one hides a treasure chest.',
     ],
@@ -195,7 +195,7 @@
     }
     fadeThrough(() => {
       Rules.sleep(G.state);
-      monsters.reset(rt);
+      monsters.reset(rt, true); // the monsters go; the animals stay
       Sound.dawn();
       UI.toast('You sleep until morning. The monsters are gone.', 3400);
       refreshHud();
@@ -299,7 +299,13 @@
   function refreshBar() {
     const s = G.state;
     const owned = Rules.ownedWeapons(s);
-    UI.setBar({ selected: owned.indexOf(s.weapon), swingLabel: WEAPONS[s.weapon].ranged ? 'Shoot' : 'Swing', slots: owned.map((id) => ({ id, name: WEAPONS[id].name, level: s.weapons[id] })) });
+    const inWater = player.swimming && !boat.riding;
+    UI.setBar({
+      selected: owned.indexOf(s.weapon),
+      swingLabel: inWater ? 'Dive' : WEAPONS[s.weapon].ranged ? 'Shoot' : 'Swing',
+      jumpLabel: inWater ? 'Up' : 'Jump',
+      slots: owned.map((id) => ({ id, name: WEAPONS[id].name, level: s.weapons[id] })),
+    });
     for (const id of Rules.WEAPON_ORDER) held[id].visible = id === s.weapon;
   }
 
@@ -308,7 +314,7 @@
   function begin(saved) {
     Sound.init();
     G.state = saved ? saved.state : Rules.createState();
-    tips = { monster: false, weapon: false, meat: false };
+    tips = { monster: false, shark: false, weapon: false, meat: false };
     fade = null;
     for (const item of rt.loot) view.group.remove(item.mesh);
     rt.loot.length = 0;
@@ -324,7 +330,7 @@
     moorBoat();
     if (saved && saved.boat) {
       const [bx, bz, bh, riding] = saved.boat;
-      if (heightAt(bx, bz) < KEEL) Object.assign(boat, { x: bx, z: bz, heading: bh, riding: !!riding });
+      if (afloat(bx, bz)) Object.assign(boat, { x: bx, z: bz, heading: bh, riding: !!riding });
     }
     if (saved && saved.pos && !boat.riding) placePlayer(saved.pos[0], saved.pos[2], saved.heading, saved.pos[1]);
     else if (boat.riding) placePlayer(boat.x, boat.z, boat.heading);
@@ -432,7 +438,7 @@
   }
 
   function hurtPlayer(amount, fromX, fromZ) {
-    if (boat.riding) return;
+    if (boat.riding || G.mode !== 'play') return;
     const result = Rules.hurt(G.state, amount);
     player.invuln = 1.3;
     const dx = player.x - fromX, dz = player.z - fromZ;
@@ -527,10 +533,11 @@
     return { mx: fx * input.moveY + rx * input.moveX, mz: fz * input.moveY + rz * input.moveX };
   }
 
-  function updateSwing(dt, push) {
+  // `mayStart` is false while the Swing button is being used to dive.
+  function updateSwing(dt, push, mayStart) {
     player.swingRest -= dt;
     const clicked = input.tap && input.tap.mouse && !input.tap.alt;
-    if ((input.swing || clicked || input.swingHeld) && player.swing < 0 && player.swingRest <= 0) {
+    if (mayStart && (input.swing || clicked || input.swingHeld) && player.swing < 0 && player.swingRest <= 0) {
       const W = WEAPONS[G.state.weapon];
       player.swing = 0;
       player.swingLen = W.ranged ? 0.25 : W.time;
@@ -568,17 +575,16 @@
     Physics.pushOut(space, next, player.y, RADIUS, HEIGHT);
     next.x = clamp(next.x, -edge, edge);
     next.z = clamp(next.z, -edge, edge);
-    // Jump swims up, Shift (or holding Swing on a touch screen) dives, and
-    // doing neither drifts back to the surface.
-    const dive = input.run || (input.touch && input.swingHeld);
-    const rise = input.jumpHeld ? 3.6 : dive ? -4 : 1.4;
+    // Jump swims up, Shift (or the on-screen Dive button) dives, and doing
+    // neither drifts back to the surface.
+    const rise = input.jumpHeld ? 3.6 : input.dive ? -4 : 1.4;
     const bed = Physics.groundAt(space, next.x, next.z, player.y + 0.4);
     player.x = next.x;
     player.z = next.z;
     player.y = Math.max(bed, Math.min(FLOAT, player.y + rise * dt));
     player.vy = 0;
     player.onGround = true;
-    if (!input.touch) updateSwing(dt, push);
+    updateSwing(dt, push, !input.swingTouch);
     if (player.invuln > 0) player.invuln -= dt;
   }
 
@@ -607,6 +613,7 @@
     const push = Math.min(1, Math.hypot(mx, mz));
     const wasSwimming = player.swimming;
     player.swimming = heightAt(player.x, player.z) < FLOAT && player.y <= FLOAT + 0.12;
+    if (player.swimming !== wasSwimming) refreshBar(); // the touch buttons read Up and Dive in the water
     if (player.swimming) {
       if (!wasSwimming) {
         Sound.splash();
@@ -653,7 +660,7 @@
       }
     }
     const ground = Physics.groundAt(space, next.x, next.z, player.y);
-    const stick = wasOnGround && player.vy <= 0 && y - ground < 0.45; // hug slopes and stairs on the way down
+    const stick = wasOnGround && player.vy <= 0 && y - ground < 0.62; // hug slopes and stairs (half a block each) on the way down
     if (y <= ground || stick) {
       if (!wasOnGround && player.vy < -9) particles.burst(next.x, ground + 0.1, next.z, 0xe8dcc0, 5, 2, 0.4, 2);
       y = ground;
@@ -674,19 +681,21 @@
       player.safeZ = player.z;
       player.safeClock = 0.3;
     }
-    updateSwing(dt, push);
+    updateSwing(dt, push, true);
     if (player.invuln > 0) player.invuln -= dt;
   }
 
   // ---------- in the boat ----------
 
-  const afloat = (x, z) => heightAt(x, z) < KEEL;
+  // Deep enough for the keel, and not under the pier.
+  const pier = data.layout.dock;
+  const afloat = (x, z) => heightAt(x, z) < KEEL && !(Math.abs(x - pier.x) < 2.2 && z > pier.z0 - 1 && z < pier.z1 + 1.6);
 
   // The nearest dry spot to step out onto, or null out at sea.
   function landing() {
     const d = data.layout.dock;
     if (dist(boat.x, boat.z, d.x, d.z1 - 1.5) < 6) return { x: d.x, z: d.z1 - 1.5, y: d.top };
-    for (let r = 2; r <= 9; r += 1) {
+    for (let r = 2; r <= 12; r += 1) {
       for (let n = 0; n < 16; n++) {
         const x = boat.x + Math.cos(n * 0.3927) * r, z = boat.z + Math.sin(n * 0.3927) * r;
         if (heightAt(x, z) > SAFE + 0.05) return { x, z };
@@ -907,7 +916,10 @@
     }
 
     if (boat.riding) {
-      player.swimming = false;
+      if (player.swimming) {
+        player.swimming = false;
+        refreshBar();
+      }
       updateBoat(dt);
     } else {
       updatePlayer(dt);
@@ -915,12 +927,16 @@
       const nearest = findNearest();
       UI.setPrompt(nearest ? nearest.label : null);
       if (input.use && nearest) nearest.act();
-      if (Rules.tickRegen(s, dt)) refreshHud();
-      if (!tips.monster && monsters.nearest(11, -1, true)) {
+      if (!tips.monster && monsters.nearest(11, -1, 'monster')) {
         tips.monster = true;
         UI.toast(input.touch ? 'A monster! Tap Swing to fight it.' : 'A monster! Press F or click to swing.', 4200);
       }
+      if (!tips.shark && player.swimming && monsters.nearest(16, -1, 'shark')) {
+        tips.shark = true;
+        UI.toast('A shark! Swim for the shallows: it cannot follow you there.', 4200);
+      }
     }
+    if (Rules.tickRegen(s, dt)) refreshHud(); // hearts mend on foot and in the boat
 
     breathe(dt);
 
@@ -930,7 +946,8 @@
       islandClock = 0.5;
       const here = Zones.nearestIsland(player.x, player.z);
       UI.setZone(here.edge < 40 ? here.island.name : 'The open sea');
-      if (!boat.riding && player.onGround && player.y > SAFE && here.edge < 0 && Rules.visitIsland(s, here.island.id)) {
+      // (The shore wanders either side of an island's rim, so dry land a little beyond it still counts.)
+      if (!boat.riding && !player.swimming && player.onGround && player.y > SAFE && here.edge < 60 && Rules.visitIsland(s, here.island.id)) {
         Sound.weapon();
         UI.toast('You have landed on ' + here.island.name + '! Islands found: ' + s.islands.length + ' of ' + Rules.ISLAND_COUNT + '.', 4600);
         refreshHud();
@@ -1007,6 +1024,10 @@
         lastMood = mood;
         sky.setMood(mood);
         view.sea.material.color.copy(sky.waterColor);
+        // The belt lantern is turned down by day.
+        const dark = Math.min(1, mood);
+        hero.light.intensity = 0.05 + 0.2 * dark;
+        hero.glow.material.opacity = 0.12 + 0.88 * dark;
       }
       drawPlayer(dt);
       view.tick(dt, G.time);
@@ -1044,6 +1065,7 @@
       sky.setUnder(below);
       if (!below) sky.setMood(Rules.moodAt(G.state.clock));
     }
+    view.cull(camera.position, scene.fog.far + 30); // skip trees and coral too far off to see
     renderer.render(scene, camera);
     tuneQuality(rawDt);
     input.clear();
@@ -1114,7 +1136,7 @@
   // Handy for testing from the browser console.
   WS.debug = {
     lockQuality: false,
-    player, cam, boat, rt, monsters, plan,
+    player, cam, boat, rt, monsters, plan, renderer,
     state: () => G.state,
     mode: () => G.mode,
     zone: () => rt,

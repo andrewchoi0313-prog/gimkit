@@ -6,7 +6,7 @@
 
   const WS = (window.WS = window.WS || {});
   const Zones = WS.Zones;
-  const { lambert, basic, add, merge } = WS.Gfx;
+  const { lambert, soft, basic, add, ball, mergeSmooth, shadeByHeight } = WS.Gfx;
 
   const lerp = (a, b, t) => a + (b - a) * t;
   const WHITE = 0xffffff; // instanced meshes take their colour from each instance
@@ -68,8 +68,8 @@
     scene.add(stars);
 
     const clouds = [];
-    const cloudMat = lambert(0xffffff, { emissive: 0x9a9aa8, fog: false });
-    const puff = new THREE.IcosahedronGeometry(1, 0);
+    const cloudMat = soft(0xffffff, { emissive: 0x9a9aa8, fog: false });
+    const puff = ball(1, 2);
     for (let i = 0; i < 34; i++) {
       const cloud = new THREE.Group();
       const puffs = 3 + Math.floor(rng() * 3);
@@ -133,6 +133,7 @@
     const murk = new THREE.Color(0x1b7f95);
     function setUnder(on) {
       dome.visible = sunDisc.visible = stars.visible = !on;
+      for (const cloud of clouds) cloud.visible = !on;
       scene.background = on ? murk : null;
     }
 
@@ -143,110 +144,221 @@
 
   const hexes = (list) => list.map((h) => new THREE.Color(h));
   const GROUND = {
-    wet: hexes([0xc9b684, 0xc9b684]), sand: hexes([0xecdaa6, 0xdcc78f]), dirt: hexes([0xc09c6e, 0xa98659]),
-    rock: hexes([0x8e8a86, 0xa7a199]), meadow: hexes([0x8ccb5c, 0x70b552]), forest: hexes([0x55974f, 0x437f49]),
-    desert: hexes([0xe8c982, 0xd9b267]), desertRock: hexes([0xc08f5a, 0xab7c4c]), desertPath: hexes([0xcfa56c, 0xbf955c]),
-    snow: hexes([0xf5f8fc, 0xdde7f2]), snowPath: hexes([0xcfd8e2, 0xbfcad6]), snowRock: hexes([0x8d99a8, 0xa3aebb]),
-    swamp: hexes([0x64864a, 0x527145]), mud: hexes([0x6f6a4a, 0x5d5a40]),
-    blight: hexes([0x5f5769, 0x4b4556]), blightPath: hexes([0x7a7080, 0x6a6072]),
+    meadow: hexes([0x8ccb5c, 0x70b552]), forest: hexes([0x55974f, 0x437f49]), desert: hexes([0xe8c982, 0xd9b267]),
+    snow: hexes([0xf5f8fc, 0xdde7f2]), swamp: hexes([0x64864a, 0x527145]), blight: hexes([0x5f5769, 0x4b4556]),
     bloom: hexes([0x9ad86a, 0x86c95e]),
   };
+  const ROCK = { desert: hexes([0xc08f5a, 0xab7c4c]), snow: hexes([0x8d99a8, 0xa3aebb]), blight: hexes([0x3f3a48, 0x4d4758]), other: hexes([0x8e8a86, 0xa7a199]) };
+  const PATH = { desert: new THREE.Color(0xc79b62), snow: new THREE.Color(0xc5cfda), blight: new THREE.Color(0x72687a), other: new THREE.Color(0xb49163) };
+  const SAND = hexes([0xecdaa6, 0xdcc78f]), MUD = hexes([0x6f6a4a, 0x5d5a40]);
+  const WET = new THREE.Color(0xc9b684), SEABED = new THREE.Color(0x8fa48c), EMBER = new THREE.Color(0xff6a2a), SCORCH = new THREE.Color(0x2e2830);
+  const SNOW_SHADE = new THREE.Color(0xb9cfe6), ASH = new THREE.Color(0x8a8490);
+  const tone = new THREE.Color();
 
+  // The colour of the ground at a point. Nothing here has a hard edge: grass
+  // fades into sand, sand into the seabed, meadow into woods, and paths and
+  // bare rock are blended in by how close or how steep the ground is.
   function groundColor(out, zone, x, z, h, ny) {
+    if (h <= -5.99) return out.copy(SEABED);
     const fine = Zones.noise(x * 0.23, z * 0.23, 5);
     const broad = Zones.noise(x * 0.05 + 9, z * 0.05 + 3, 6);
-    const pick = (pair, t) => out.copy(pair[0]).lerp(pair[1], t);
-    const onPath = Zones.distToPaths(zone.def.paths, x, z) < 1.6 + fine * 0.8;
-    // Jitter the lookup a little so the edge of the woods is ragged.
-    const biome = zone.biomeAt(x + (fine - 0.5) * 16, z + (broad - 0.5) * 16);
-    if (h < 0.15) return pick(GROUND.wet, 0);
-    if (biome === 'swamp') return pick(h < 1 ? GROUND.mud : GROUND.swamp, fine);
-    if (h < 1.25) return pick(GROUND.sand, fine);
-    if (onPath) return pick(biome === 'desert' ? GROUND.desertPath : biome === 'snow' ? GROUND.snowPath : biome === 'blight' ? GROUND.blightPath : GROUND.dirt, fine);
-    if (ny < 0.72) return pick(biome === 'desert' ? GROUND.desertRock : biome === 'snow' ? GROUND.snowRock : GROUND.rock, fine);
-    return pick(GROUND[biome], biome === 'meadow' ? broad * 0.7 + fine * 0.3 : fine);
+    const pair = (p, t) => tone.copy(p[0]).lerp(p[1], t);
+    const island = Zones.nearestIsland(x, z).island;
+    const biome = island.biome;
+    if (island.id === 'home') {
+      // Meadow in the east, woods in the west, with a ragged edge between.
+      out.copy(pair(GROUND.meadow, broad * 0.7 + fine * 0.3));
+      out.lerp(pair(GROUND.forest, fine), Zones.woodsOnHome(x + (fine - 0.5) * 18, z + (broad - 0.5) * 18));
+    } else {
+      out.copy(pair(GROUND[biome], biome === 'bloom' ? broad * 0.7 + fine * 0.3 : fine));
+    }
+    // Wide, slow patches of lighter and darker ground, so no field is one flat colour.
+    const drift = Zones.fbm(x * 0.013 + 50, z * 0.013 + 20, 2, 31);
+    out.multiplyScalar(0.9 + drift * 0.2);
+    if (biome === 'snow') out.lerp(SNOW_SHADE, Zones.smooth(0.995, 0.9, ny) * 0.55);       // blue in the hollows and on slopes
+    if (biome === 'blight') out.lerp(ASH, Zones.smooth(0.36, 0.62, drift) * (0.45 + fine * 0.35)); // drifts of pale ash
+    if (island.id === 'ash') {
+      // The volcano: scorched slopes and a glowing crater.
+      const d = Zones.dist(x, z, Zones.VOLCANO.x, Zones.VOLCANO.z);
+      out.lerp(SCORCH, Zones.smooth(Zones.VOLCANO.r, Zones.VOLCANO.crater, d) * 0.6);
+      out.lerp(EMBER, Zones.smooth(Zones.VOLCANO.crater * 0.8, 4, d) * (0.6 + fine * 0.4));
+    }
+    out.lerp(pair(ROCK[biome] || ROCK.other, fine), Zones.smooth(0.86, 0.68, ny));                    // bare rock where it is steep
+    if (h > 0.4) out.lerp(PATH[biome] || PATH.other, Zones.smooth(4.4, 1.3, Zones.distToPaths(zone.def.paths, x, z)) * 0.92);
+    out.lerp(pair(biome === 'swamp' ? MUD : SAND, fine), Zones.smooth(2.1, 0.9, h));                  // the beach
+    out.lerp(WET, Zones.smooth(0.5, -0.2, h));                                                        // the waterline
+    return out.lerp(SEABED, Zones.smooth(-0.8, -5, h));                                               // and down into the deep
   }
 
-  function buildGround(zone) {
+  // The ground is one grid of heights drawn as 64 smaller meshes, so only the
+  // pieces in view are sent to the graphics card. Corners are shared between
+  // triangles, which is what makes the hills shade smoothly and the colours
+  // blend.
+  function buildGround(zone, group) {
     const { heights, cells, step, half } = zone.terrain;
-    const n = cells + 1;
-    const positions = new Float32Array(cells * cells * 18);
-    const colors = new Float32Array(cells * cells * 18);
+    const n = cells + 1, CH = 64;
+    const H = (i, j) => heights[Math.max(0, Math.min(cells, j)) * n + Math.max(0, Math.min(cells, i))];
+    const colors = new Float32Array(n * n * 3), normals = new Float32Array(n * n * 3);
     const color = new THREE.Color();
-    let o = 0;
-    function tri(ax, ay, az, bx, by, bz, cx, cy, cz) {
-      // Face normal, to tell steep rock from walkable ground.
-      const ux = bx - ax, uy = by - ay, uz = bz - az, vx = cx - ax, vy = cy - ay, vz = cz - az;
-      const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
-      groundColor(color, zone, (ax + bx + cx) / 3, (az + bz + cz) / 3, (ay + by + cy) / 3, ny / (Math.hypot(nx, ny, nz) || 1));
-      positions.set([ax, ay, az, bx, by, bz, cx, cy, cz], o);
-      for (let k = 0; k < 9; k += 3) colors.set([color.r, color.g, color.b], o + k);
-      o += 9;
-    }
-    for (let j = 0; j < cells; j++) {
-      for (let i = 0; i < cells; i++) {
-        const x0 = i * step - half, x1 = x0 + step, z0 = j * step - half, z1 = z0 + step;
-        const h00 = heights[j * n + i], h10 = heights[j * n + i + 1];
-        const h01 = heights[(j + 1) * n + i], h11 = heights[(j + 1) * n + i + 1];
-        tri(x0, h00, z0, x0, h01, z1, x1, h10, z0);
-        tri(x1, h10, z0, x0, h01, z1, x1, h11, z1);
+    for (let j = 0; j < n; j++) {
+      for (let i = 0; i < n; i++) {
+        // The slope here, from the heights either side.
+        const sx = (H(i + 1, j) - H(i - 1, j)) / (2 * step), sz = (H(i, j + 1) - H(i, j - 1)) / (2 * step);
+        const len = Math.hypot(sx, 1, sz);
+        const o = (j * n + i) * 3;
+        normals[o] = -sx / len;
+        normals[o + 1] = 1 / len;
+        normals[o + 2] = -sz / len;
+        groundColor(color, zone, i * step - half, j * step - half, heights[j * n + i], 1 / len);
+        colors[o] = color.r;
+        colors[o + 1] = color.g;
+        colors[o + 2] = color.b;
       }
     }
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    geometry.computeVertexNormals();
-    const ground = new THREE.Mesh(geometry, new THREE.MeshLambertMaterial({ vertexColors: true }));
-    ground.receiveShadow = true;
-    return ground;
+    const material = new THREE.MeshLambertMaterial({ vertexColors: true });
+    for (let cj = 0; cj < cells; cj += CH) {
+      for (let ci = 0; ci < cells; ci += CH) {
+        let flat = true;
+        for (let j = cj; j <= cj + CH && flat; j++) for (let i = ci; i <= ci + CH; i++) if (heights[j * n + i] !== -6) { flat = false; break; }
+        const span = flat ? CH : 1; // open sea needs only one big square
+        const side = CH / span + 1;
+        const pos = new Float32Array(side * side * 3), nor = new Float32Array(side * side * 3), col = new Float32Array(side * side * 3);
+        const index = [];
+        for (let b = 0; b < side; b++) {
+          for (let a = 0; a < side; a++) {
+            const i = ci + a * span, j = cj + b * span, from = (j * n + i) * 3, to = (b * side + a) * 3;
+            pos[to] = i * step - half;
+            pos[to + 1] = heights[j * n + i];
+            pos[to + 2] = j * step - half;
+            for (let k = 0; k < 3; k++) {
+              nor[to + k] = normals[from + k];
+              col[to + k] = colors[from + k];
+            }
+            if (a < side - 1 && b < side - 1) {
+              // Two triangles, split the same way Zones.buildTerrain reads heights.
+              const p = b * side + a;
+              index.push(p, p + side, p + 1, p + 1, p + side, p + side + 1);
+            }
+          }
+        }
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+        geometry.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+        geometry.setAttribute('color', new THREE.BufferAttribute(col, 3));
+        geometry.setIndex(index);
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.receiveShadow = true;
+        group.add(mesh);
+      }
+    }
   }
 
   // ---------- plants and rocks ----------
 
-  function instanced(group, geometry, material, items, place, castShadow) {
-    if (!items.length) return;
-    const mesh = new THREE.InstancedMesh(geometry, material, items.length);
+  const PATCH = 128;      // instanced things are grouped into squares this wide
+  const CLOSE = 55;       // patches nearer than this are drawn with their full shape
+
+  // Draws many copies of one shape. The copies are split into patches of
+  // land so that patches out of view, or lost in the fog, cost nothing.
+  // place(dummy, color, item) positions and tints one copy.
+  // more.sight: small things need not be drawn from further off than this.
+  // more.far: a simpler shape to draw the patch with when it is not close.
+  function instanced(view, geometry, material, items, place, castShadow, more) {
+    const sight = (more && more.sight) || Infinity, farGeometry = more && more.far;
+    const share = (source) => {
+      // Each patch shares the shape's data but keeps its own bounds.
+      const shape = new THREE.BufferGeometry();
+      shape.setIndex(source.index);
+      for (const name of Object.keys(source.attributes)) shape.setAttribute(name, source.attributes[name]);
+      return shape;
+    };
+    const patches = new Map();
+    for (const item of items) {
+      const key = Math.floor(item.x / PATCH) + ',' + Math.floor(item.z / PATCH);
+      if (!patches.has(key)) patches.set(key, []);
+      patches.get(key).push(item);
+    }
     const dummy = new THREE.Object3D();
     const color = new THREE.Color();
-    items.forEach((item, i) => {
-      place(dummy, color, item);
-      dummy.updateMatrix();
-      mesh.setMatrixAt(i, dummy.matrix);
-      mesh.setColorAt(i, color);
-    });
-    mesh.frustumCulled = false; // instances are spread over the whole zone
-    mesh.castShadow = castShadow !== false;
-    mesh.receiveShadow = true;
-    group.add(mesh);
+    geometry.computeBoundingSphere();
+    for (const list of patches.values()) {
+      const shape = share(geometry);
+      const mesh = new THREE.InstancedMesh(shape, material, list.length);
+      const box = new THREE.Box3();
+      let reach = 0;
+      list.forEach((item, i) => {
+        place(dummy, color, item);
+        dummy.updateMatrix();
+        mesh.setMatrixAt(i, dummy.matrix);
+        mesh.setColorAt(i, color);
+        box.expandByPoint(dummy.position);
+        reach = Math.max(reach, Math.max(dummy.scale.x, dummy.scale.y, dummy.scale.z));
+      });
+      shape.boundingSphere = box.getBoundingSphere(new THREE.Sphere());
+      shape.boundingSphere.radius += reach * (geometry.boundingSphere.radius + geometry.boundingSphere.center.length());
+      mesh.castShadow = castShadow !== false;
+      mesh.receiveShadow = true;
+      view.group.add(mesh);
+      let far = null;
+      if (farGeometry) {
+        // The same copies, drawn with the simpler shape. Too far off to need shadows.
+        const simple = share(farGeometry);
+        simple.boundingSphere = shape.boundingSphere;
+        far = new THREE.InstancedMesh(simple, material, list.length);
+        far.instanceMatrix = mesh.instanceMatrix;
+        far.instanceColor = mesh.instanceColor;
+        far.castShadow = false;
+        far.receiveShadow = true;
+        far.visible = false;
+        view.group.add(far);
+      }
+      view.patches.push({ mesh, far, sphere: shape.boundingSphere, sight });
+    }
   }
 
-  const cyl = (rt, rb, h, seg) => new THREE.CylinderGeometry(rt, rb, h, seg || 6);
+  const cyl = (rt, rb, h, seg) => new THREE.CylinderGeometry(rt, rb, h, seg || 8);
+  const painted = () => soft(WHITE, { vertexColors: true });
 
-  function scatter(group, layout, grid) {
-    const trunkGeo = cyl(0.2, 0.34, 1.9).translate(0, 0.95, 0);
-    const pineGeo = merge([
-      new THREE.ConeGeometry(1.55, 2.3, 7).translate(0, 2.5, 0),
-      new THREE.ConeGeometry(1.2, 2.0, 7).translate(0, 3.7, 0),
-      new THREE.ConeGeometry(0.8, 1.8, 7).translate(0, 4.8, 0),
-    ]);
-    const roundGeo = merge([
-      new THREE.IcosahedronGeometry(1.55, 0).scale(1, 0.9, 1).translate(0, 3.0, 0),
-      new THREE.IcosahedronGeometry(1.0, 0).translate(0.9, 2.5, 0.3),
-      new THREE.IcosahedronGeometry(0.9, 0).translate(-0.8, 2.7, -0.4),
-    ]);
-    const cactusGeo = merge([
-      cyl(0.3, 0.36, 2.7, 7).translate(0, 1.35, 0),
-      new THREE.BoxGeometry(0.55, 0.22, 0.22).translate(0.42, 1.35, 0),
-      cyl(0.18, 0.2, 0.95, 6).translate(0.68, 1.75, 0),
-      new THREE.BoxGeometry(0.5, 0.22, 0.22).translate(-0.4, 0.95, 0),
-      cyl(0.18, 0.2, 0.75, 6).translate(-0.64, 1.25, 0),
-    ]);
-    const deadGeo = merge([
-      cyl(0.12, 0.3, 3.3, 5).translate(0, 1.65, 0),
-      cyl(0.05, 0.1, 1.5, 4).rotateZ(-0.9).translate(0.6, 2.4, 0),
-      cyl(0.05, 0.1, 1.3, 4).rotateZ(1.0).translate(-0.5, 1.9, 0.1),
-      cyl(0.04, 0.08, 1.0, 4).rotateX(0.9).translate(0, 2.9, 0.4),
-    ]);
+  function scatter(view, layout) {
+    const grid = view.grid;
+    // Every shape is smooth-shaded, and painted darker low down and lighter
+    // on top so it has some depth before any light falls on it.
+    // Trees have two shapes: a round, detailed one for close by, and a
+    // simple one with the same outline for further off.
+    const trunk = (sides) => shadeByHeight(new THREE.CylinderGeometry(0.2, 0.34, 1.9, sides, 1, true).translate(0, 0.95, 0), 0.8, 1.06);
+    const trunkGeo = trunk(8), trunkFar = trunk(5);
+    const pineOf = (sides) => {
+      const tier = (r, h, y) => shadeByHeight(new THREE.ConeGeometry(r, h, sides).translate(0, y, 0), 0.68, 1.14);
+      return mergeSmooth([tier(1.55, 2.3, 2.5), tier(1.2, 2.0, 3.7), tier(0.8, 1.8, 4.8)]);
+    };
+    const pineGeo = pineOf(16), pineFar = pineOf(7);
+    const roundOf = (detail) => shadeByHeight(mergeSmooth([
+      ball(1.55, detail).scale(1, 0.9, 1).translate(0, 3.0, 0),
+      ball(1.0, detail - 1).translate(0.9, 2.5, 0.3),
+      ball(0.9, detail - 1).translate(-0.8, 2.7, -0.4),
+    ]), 0.66, 1.14);
+    const roundGeo = roundOf(3), roundFar = roundOf(1);
+    const cactusOf = (around) => {
+      const arm = (r, len, x, y, z, lean) => {
+        const g = new THREE.CapsuleGeometry(r, len, 3, around);
+        if (lean) g.rotateZ(lean);
+        return g.translate(x, y, z);
+      };
+      return shadeByHeight(mergeSmooth([
+        arm(0.32, 2.1, 0, 1.4, 0),
+        arm(0.18, 0.5, 0.46, 1.35, 0, Math.PI / 2),
+        arm(0.18, 0.7, 0.7, 1.78, 0),
+        arm(0.18, 0.45, -0.44, 0.95, 0, Math.PI / 2),
+        arm(0.18, 0.5, -0.66, 1.26, 0),
+      ]), 0.78, 1.1);
+    };
+    const cactusGeo = cactusOf(10), cactusFar = cactusOf(5);
+    const deadGeo = shadeByHeight(mergeSmooth([
+      cyl(0.12, 0.3, 3.3, 7).translate(0, 1.65, 0),
+      cyl(0.05, 0.1, 1.5, 6).rotateZ(-0.9).translate(0.6, 2.4, 0),
+      cyl(0.05, 0.1, 1.3, 6).rotateZ(1.0).translate(-0.5, 1.9, 0.1),
+      cyl(0.04, 0.08, 1.0, 6).rotateX(0.9).translate(0, 2.9, 0.4),
+    ]), 0.75, 1.1);
     const C = (h) => new THREE.Color(h);
     const pine = [C(0x2f7d4f), C(0x45a05a)], snowy = [C(0xdfeaf2), C(0xa9c9c0)], leaf = [C(0x5fae4a), C(0x93cf55)];
     const blossom = [C(0xf7b4cf), C(0xffdcea)], amber = C(0xe7a23c), bark = [C(0x7a5536), C(0x94694a)];
@@ -257,29 +369,38 @@
       d.scale.setScalar(t.scale);
     };
     const of = (...types) => layout.trees.filter((t) => types.includes(t.type));
-    instanced(group, trunkGeo, lambert(WHITE), of('pine', 'round', 'snowpine', 'blossom'), (d, c, t) => { setTree(d, t); c.copy(bark[0]).lerp(bark[1], t.tint); });
-    instanced(group, pineGeo, lambert(WHITE), of('pine', 'snowpine'), (d, c, t) => {
+    instanced(view, trunkGeo, painted(), of('pine', 'round', 'snowpine', 'blossom'), (d, c, t) => { setTree(d, t); c.copy(bark[0]).lerp(bark[1], t.tint); }, true, { far: trunkFar });
+    instanced(view, pineGeo, painted(), of('pine', 'snowpine'), (d, c, t) => {
       setTree(d, t);
       const pair = t.type === 'snowpine' ? snowy : pine;
       c.copy(pair[0]).lerp(pair[1], t.tint);
-    });
-    instanced(group, roundGeo, lambert(WHITE), of('round', 'blossom'), (d, c, t) => {
+    }, true, { far: pineFar });
+    instanced(view, roundGeo, painted(), of('round', 'blossom'), (d, c, t) => {
       setTree(d, t);
       if (t.type === 'blossom') c.copy(blossom[0]).lerp(blossom[1], t.tint);
       else if (t.tint > 0.9) c.copy(amber);
       else c.copy(leaf[0]).lerp(leaf[1], t.tint / 0.9);
-    });
-    instanced(group, cactusGeo, lambert(WHITE), of('cactus'), (d, c, t) => { setTree(d, t); d.position.y = t.y - 0.1; c.copy(cactus[0]).lerp(cactus[1], t.tint); });
-    instanced(group, deadGeo, lambert(WHITE), of('dead'), (d, c, t) => { setTree(d, t); c.copy(dead[0]).lerp(dead[1], t.tint); });
+    }, true, { far: roundFar });
+    instanced(view, cactusGeo, painted(), of('cactus'), (d, c, t) => { setTree(d, t); d.position.y = t.y - 0.1; c.copy(cactus[0]).lerp(cactus[1], t.tint); }, true, { far: cactusFar });
+    instanced(view, deadGeo, painted(), of('dead'), (d, c, t) => { setTree(d, t); c.copy(dead[0]).lerp(dead[1], t.tint); });
     for (const t of layout.trees) {
       grid.add({ kind: 'cyl', x: t.x, z: t.z, r: (t.type === 'dead' ? 0.3 : 0.42) * t.scale, y0: -50, y1: TALL, on: true });
     }
 
+    // Rocks: a ball pushed in and out a little so no two sides look alike.
+    const rockGeo = ball(1, 2);
+    const rp = rockGeo.attributes.position;
+    for (let i = 0; i < rp.count; i++) {
+      const x = rp.getX(i), y = rp.getY(i), z = rp.getZ(i);
+      const k = 1 + (Zones.noise(x * 1.6 + y * 2.9 + 4, z * 1.6 - y * 2.1 + 8, 91) - 0.5) * 0.5;
+      rp.setXYZ(i, x * k, y * k, z * k);
+    }
+    shadeByHeight(rockGeo, 0.7, 1.1);
     const rockTints = {
       desert: [C(0xc49a62), C(0xd8b27a)],
       snow: [C(0xa3aebb), C(0xc3ccd6)], blight: [C(0x4a4454), C(0x625a6e)], other: [C(0x8b8782), C(0xb0aaa1)],
     };
-    instanced(group, new THREE.IcosahedronGeometry(1, 0), lambert(WHITE), layout.rocks, (d, c, r) => {
+    instanced(view, rockGeo, painted(), layout.rocks, (d, c, r) => {
       d.position.set(r.x, r.y + r.scale * r.squash * 0.3, r.z);
       d.rotation.set(0, r.turn, 0);
       d.scale.set(r.scale, r.scale * r.squash, r.scale);
@@ -290,44 +411,104 @@
       grid.add({ kind: 'cyl', x: r.x, z: r.z, r: r.scale * 0.8, y0: -50, y1: r.y + r.scale * r.squash * 1.05, on: true });
     }
 
-    const tuftGeo = merge([
-      new THREE.ConeGeometry(0.1, 0.6, 4).translate(0, 0.3, 0),
-      new THREE.ConeGeometry(0.09, 0.45, 4).rotateZ(0.5).translate(-0.16, 0.2, 0.05),
-      new THREE.ConeGeometry(0.09, 0.5, 4).rotateZ(-0.45).translate(0.17, 0.22, -0.04),
-    ]);
+    const blade = (h, lean, x, z) => new THREE.ConeGeometry(0.09, h, 5).rotateZ(lean).translate(x, h / 2 - 0.02, z);
+    const tuftGeo = shadeByHeight(mergeSmooth([blade(0.6, 0, 0, 0), blade(0.45, 0.5, -0.16, 0.05), blade(0.5, -0.45, 0.17, -0.04)]), 0.7, 1.2);
     const tuft = [C(0x5fa648), C(0x9bd565)], dry = [C(0xb9a55a), C(0xcdbb72)], reed = [C(0x4a6b3e), C(0x6a8a4c)];
-    instanced(group, tuftGeo, lambert(WHITE), layout.tufts.filter((t) => t.kind < 2), (d, c, t) => {
+    instanced(view, tuftGeo, painted(), layout.tufts.filter((t) => t.kind < 2), (d, c, t) => {
       d.position.set(t.x, t.y, t.z);
       d.rotation.set(0, t.turn, 0);
       d.scale.setScalar(t.biome === 'swamp' ? t.scale * 1.5 : t.scale);
       const pair = t.biome === 'desert' ? dry : t.biome === 'swamp' ? reed : tuft;
       c.copy(pair[0]).lerp(pair[1], t.scale - 0.7);
-    }, false);
+    }, false, { sight: 150 });
+    // Flowers: a dark stem and a round head in the flower's own colour.
     const petals = [0xffd84a, 0xff8fb0, 0xffffff, 0xb99cff].map(C);
-    const flowerGeo = merge([cyl(0.025, 0.025, 0.4, 4).translate(0, 0.2, 0), new THREE.OctahedronGeometry(0.14, 0).translate(0, 0.46, 0)]);
-    instanced(group, flowerGeo, lambert(WHITE), layout.tufts.filter((t) => t.kind >= 2 && t.biome !== 'desert'), (d, c, t) => {
+    const flowerGeo = mergeSmooth([
+      shadeByHeight(cyl(0.025, 0.025, 0.4, 5).translate(0, 0.2, 0), [0.2, 0.45, 0.2], [0.25, 0.5, 0.25]),
+      shadeByHeight(ball(0.14, 1).scale(1, 0.8, 1).translate(0, 0.46, 0), 0.85, 1.15),
+    ]);
+    instanced(view, flowerGeo, painted(), layout.tufts.filter((t) => t.kind >= 2 && t.biome !== 'desert'), (d, c, t) => {
       d.position.set(t.x, t.y, t.z);
       d.rotation.set(0, t.turn, 0);
       d.scale.setScalar(t.scale);
       c.copy(petals[Math.floor(t.turn * 7) % petals.length]);
-    }, false);
+    }, false, { sight: 120 });
+
+    // The lake: lily pads lying on the water, some in flower, and reeds with
+    // brown heads standing in the shallows.
+    const padGeo = new THREE.CircleGeometry(0.62, 20, 0.3, 5.7).rotateX(-Math.PI / 2);
+    const padPaint = new Float32Array(padGeo.attributes.position.count * 3).fill(0.82);
+    padPaint.set([1.25, 1.25, 1.25], 0); // lighter in the middle
+    padGeo.setAttribute('color', new THREE.BufferAttribute(padPaint, 3));
+    const pad = [C(0x3f8f4a), C(0x63ad52)];
+    instanced(view, padGeo, soft(WHITE, { vertexColors: true, side: THREE.DoubleSide }), layout.pads, (d, c, p) => {
+      d.position.set(p.x, 0.07, p.z);
+      d.rotation.set(0, p.turn, 0);
+      d.scale.setScalar(p.scale);
+      c.copy(pad[0]).lerp(pad[1], (p.turn / 6.3) % 1);
+    }, false, { sight: 220 });
+    const lilyGeo = mergeSmooth([
+      shadeByHeight(ball(0.2, 1).scale(1, 0.55, 1).translate(0, 0.1, 0), [1, 0.78, 0.86], [1, 1, 1]),
+      shadeByHeight(ball(0.08, 1).translate(0, 0.19, 0), [1, 0.8, 0.2], [1, 0.9, 0.3]),
+    ]);
+    instanced(view, lilyGeo, painted(), layout.pads.filter((p) => p.flower), (d, c, p) => {
+      d.position.set(p.x + 0.1 * p.scale, 0.07, p.z - 0.08 * p.scale);
+      d.rotation.set(0, p.turn, 0);
+      d.scale.setScalar(p.scale);
+      c.set(WHITE);
+    }, false, { sight: 140 });
+    const stalk = (h, lean, x, z) => [
+      shadeByHeight(cyl(0.025, 0.04, h, 5).rotateZ(lean).translate(x - Math.sin(lean) * h / 2, h / 2, z), [0.3, 0.48, 0.22], [0.5, 0.7, 0.34]),
+      shadeByHeight(new THREE.CapsuleGeometry(0.06, 0.26, 3, 8).rotateZ(lean).translate(x - Math.sin(lean) * (h - 0.25), h - 0.25, z), [0.36, 0.24, 0.14], [0.46, 0.31, 0.18]),
+    ];
+    const reedGeo = mergeSmooth([...stalk(2.0, 0, 0, 0), ...stalk(1.6, 0.13, 0.2, 0.08), ...stalk(1.75, -0.1, -0.18, -0.1)]);
+    instanced(view, reedGeo, painted(), layout.reeds, (d, c, r) => {
+      d.position.set(r.x, r.y - 0.1, r.z);
+      d.rotation.set(0, r.turn, 0);
+      d.scale.setScalar(r.scale);
+      c.set(WHITE);
+    }, false, { sight: 220 });
   }
 
   // ---------- the sea ----------
 
+  // The sea is pale and clear in the shallows and deep blue further out, with
+  // slow swells that catch the sun.
   function addSea(view, size) {
-    const geo = new THREE.PlaneGeometry(size, size, 150, 150).rotateX(-Math.PI / 2);
+    const heightAt = view.zone.heightAt;
+    const geo = new THREE.PlaneGeometry(size, size, 220, 220).rotateX(-Math.PI / 2);
+    const pos = geo.attributes.position, normal = geo.attributes.normal;
+    const paint = new Float32Array(pos.count * 4);
+    const swell = new Float32Array(pos.count); // how big the waves are here: small in the shallows, almost still on the lake
+    const lake = Zones.LAKE;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i), z = pos.getZ(i);
+      const deep = Zones.smooth(0.3, 5.2, -heightAt(x, z));
+      paint.set([lerp(1.7, 0.74, deep), lerp(1.42, 0.82, deep), lerp(1.26, 0.96, deep), lerp(0.42, 0.88, deep)], i * 4);
+      swell[i] = (0.35 + 0.65 * deep) * (1 - 0.85 * Zones.smooth(lake.r + 60, lake.r + 25, Zones.dist(x, z, lake.x, lake.z)));
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(paint, 4));
     // Two-sided, so a diver looking up sees the surface.
-    const mesh = new THREE.Mesh(geo, lambert(0x2aa3b5, { transparent: true, opacity: 0.8, side: THREE.DoubleSide }));
+    const mesh = new THREE.Mesh(geo, new THREE.MeshPhongMaterial({
+      color: 0x2aa3b5, vertexColors: true, transparent: true, side: THREE.DoubleSide, specular: 0x8fb8c4, shininess: 70,
+    }));
     mesh.receiveShadow = true;
     view.group.add(mesh);
-    const pos = geo.attributes.position;
     view.tickers.push((dt, time) => {
-      const a = pos.array;
-      for (let i = 0; i < a.length; i += 3) {
-        a[i + 1] = Math.sin(a[i] * 0.045 + time * 0.9) * 0.14 + Math.sin(a[i + 2] * 0.06 + time * 1.25) * 0.11;
+      const p = pos.array, nn = normal.array;
+      const a = time * 0.9, b = time * 1.25;
+      for (let i = 0, n = 0; i < p.length; i += 3, n++) {
+        const u = p[i] * 0.045 + a, v = p[i + 2] * 0.06 + b, k = swell[n];
+        p[i + 1] = (Math.sin(u) * 0.14 + Math.sin(v) * 0.11) * k;
+        // The slope of the swell, steepened so the light picks it out.
+        const sx = Math.cos(u) * 0.05 * k, sz = Math.cos(v) * 0.053 * k;
+        const len = Math.hypot(sx, 1, sz);
+        nn[i] = -sx / len;
+        nn[i + 1] = 1 / len;
+        nn[i + 2] = -sz / len;
       }
       pos.needsUpdate = true;
+      normal.needsUpdate = true;
     });
     return mesh;
   }
@@ -337,19 +518,23 @@
   // Coral, sponges and weed on the seabed. All for show: nothing to bump into.
   function buildReef(view) {
     const corals = view.zone.layout.corals;
-    const glowing = () => lambert(WHITE, { emissive: 0x3a3a3a });
-    const branch = merge([
-      cyl(0.08, 0.15, 1.0, 5).translate(0, 0.5, 0),
-      cyl(0.05, 0.09, 0.75, 5).rotateZ(-0.7).translate(0.3, 0.8, 0),
-      cyl(0.05, 0.09, 0.65, 5).rotateZ(0.8).translate(-0.28, 0.65, 0.05),
-      cyl(0.04, 0.08, 0.55, 5).rotateX(0.8).translate(0, 0.95, 0.25),
-    ]);
-    const brain = new THREE.IcosahedronGeometry(0.55, 1).scale(1, 0.7, 1).translate(0, 0.3, 0);
-    const weed = merge([
-      new THREE.ConeGeometry(0.1, 1.9, 4).translate(0, 0.95, 0),
-      new THREE.ConeGeometry(0.08, 1.4, 4).rotateZ(0.25).translate(-0.25, 0.7, 0.1),
-      new THREE.ConeGeometry(0.08, 1.6, 4).rotateZ(-0.2).translate(0.22, 0.8, -0.1),
-    ]);
+    const glowing = () => soft(WHITE, { vertexColors: true, emissive: 0x2c2c2c });
+    const arm = (r, len, x, y, z, lean, tip) => {
+      const g = new THREE.CapsuleGeometry(r, len, 2, 7);
+      if (lean) g.rotateZ(lean);
+      if (tip) g.rotateY(tip);
+      return g.translate(x, y, z);
+    };
+    // Paler towards the tips, the way living coral is.
+    const branch = shadeByHeight(mergeSmooth([
+      arm(0.11, 0.8, 0, 0.5, 0), arm(0.07, 0.55, 0.3, 0.85, 0, -0.75), arm(0.07, 0.5, -0.28, 0.72, 0.05, 0.8),
+      arm(0.06, 0.45, 0.05, 1.0, 0.24, 0.7, 1.6), arm(0.06, 0.4, -0.06, 0.95, -0.22, -0.7, 1.4),
+    ]), 0.72, 1.35);
+    const brain = shadeByHeight(ball(0.55, 2).scale(1, 0.7, 1).translate(0, 0.3, 0), 0.7, 1.2);
+    const frond = (h, lean, x, z) => new THREE.ConeGeometry(0.1, h, 6).rotateZ(lean).translate(x, h / 2, z);
+    const weed = shadeByHeight(mergeSmooth([frond(1.9, 0, 0, 0), frond(1.4, 0.25, -0.25, 0.1), frond(1.6, -0.2, 0.22, -0.1)]), 0.6, 1.3);
+    // Table coral: a wide plate on a short stalk.
+    const table = shadeByHeight(mergeSmooth([cyl(0.1, 0.16, 0.5, 8).translate(0, 0.25, 0), ball(0.7, 2).scale(1, 0.16, 1).translate(0, 0.55, 0)]), 0.7, 1.25);
     const bright = [0xff6f91, 0xff9a3c, 0xb388ff, 0xffd84a, 0x4fd6c8, 0xff5a5a].map((h) => new THREE.Color(h));
     const green = [0x3fae6a, 0x2f8f6f, 0x6fcf7a].map((h) => new THREE.Color(h));
     const set = (d, c, k, palette) => {
@@ -358,22 +543,23 @@
       d.scale.setScalar(k.scale);
       c.copy(palette[k.tint % palette.length]);
     };
-    instanced(view.group, branch, glowing(), corals.filter((k) => k.kind === 0), (d, c, k) => set(d, c, k, bright), false);
-    instanced(view.group, brain, glowing(), corals.filter((k) => k.kind === 1), (d, c, k) => set(d, c, k, bright), false);
-    instanced(view.group, weed, glowing(), corals.filter((k) => k.kind === 2), (d, c, k) => set(d, c, k, green), false);
+    [branch, brain, weed, table].forEach((shape, kind) => {
+      // Coral is only seen through clear water close by, or from under the sea.
+      instanced(view, shape, glowing(), corals.filter((k) => k.kind === kind), (d, c, k) => set(d, c, k, kind === 2 ? green : bright), false, { sight: 95 });
+    });
   }
 
   // ---------- the dock ----------
 
   function buildDock(view) {
     const d = view.zone.layout.dock;
-    const wood = lambert(0x8a5f3c), woodDark = lambert(0x5f4129);
+    const wood = lambert(0x8a5f3c), post = soft(0x5f4129);
     const len = d.z1 - d.z0;
     add(view.group, new THREE.BoxGeometry(2.4, 0.22, len), wood, d.x, d.top - 0.11, (d.z0 + d.z1) / 2);
     for (let z = d.z0 + 1; z < d.z1; z += 4) {
-      for (const side of [-1.1, 1.1]) add(view.group, cyl(0.16, 0.16, 4.2, 6), woodDark, d.x + side, d.top - 1.6, z);
+      for (const side of [-1.1, 1.1]) add(view.group, cyl(0.16, 0.16, 4.2, 10), post, d.x + side, d.top - 1.6, z);
     }
-    add(view.group, cyl(0.14, 0.14, 1.2, 6), woodDark, d.x + 1.1, d.top + 0.5, d.z1 - 0.4);
+    add(view.group, cyl(0.14, 0.14, 1.2, 10), post, d.x + 1.1, d.top + 0.5, d.z1 - 0.4);
     view.grid.add({ kind: 'box', x0: d.x - 1.2, x1: d.x + 1.2, z0: d.z0, z1: d.z1, y0: -50, y1: d.top, on: true });
   }
 
@@ -394,9 +580,9 @@
 
     // The fire in the hearth, with logs and a warm glow.
     const f = plan.fire;
-    for (let i = 0; i < 3; i++) add(g, cyl(0.1, 0.1, 0.8, 5), woodDark, f.x, f.y + 0.12, f.z).rotation.set(Math.PI / 2, 0, i * 1.05);
-    const flame = add(g, new THREE.ConeGeometry(0.3, 0.8, 5), basic(0xff9a3c), f.x, f.y + 0.55, f.z, false);
-    const core = add(g, new THREE.ConeGeometry(0.16, 0.5, 5), basic(0xffe07a), f.x, f.y + 0.45, f.z, false);
+    for (let i = 0; i < 3; i++) add(g, cyl(0.1, 0.1, 0.8, 10), soft(0x5f4129), f.x, f.y + 0.12, f.z).rotation.set(Math.PI / 2, 0, i * 1.05);
+    const flame = add(g, new THREE.ConeGeometry(0.3, 0.8, 12), basic(0xff9a3c), f.x, f.y + 0.55, f.z, false);
+    const core = add(g, new THREE.ConeGeometry(0.16, 0.5, 12), basic(0xffe07a), f.x, f.y + 0.45, f.z, false);
     const glow = WS.Actors.glowSprite(0xff9a3c, 4.5);
     glow.position.set(f.x + 0.4, f.y + 0.7, f.z);
     g.add(glow);
@@ -461,10 +647,11 @@
       grid: WS.Physics.makeGrid(),
       tickers: [],
       chests: [],
+      patches: [],   // instanced patches, hidden when they are out of sight
       sea: null,
     };
-    view.group.add(buildGround(zone));
-    scatter(view.group, zone.layout, view.grid);
+    buildGround(zone, view.group);
+    scatter(view, zone.layout);
     view.sea = addSea(view, zone.def.size + 1400);
     buildReef(view);
     buildDock(view);
@@ -483,6 +670,15 @@
     view.surfaceAt = (x, z) => WS.Physics.groundAt({ heightAt: zone.heightAt, grid: view.grid, store: null }, x, z, 1e4);
     view.tick = (dt, time) => {
       for (const t of view.tickers) t(dt, time);
+    };
+    // Hides every patch of trees, rocks and coral further off than can be seen.
+    view.cull = (eye, sight) => {
+      for (const patch of view.patches) {
+        const d = patch.sphere.distanceToPoint(eye);
+        const seen = d < sight && d < patch.sight;
+        patch.mesh.visible = seen && (!patch.far || d < CLOSE);
+        if (patch.far) patch.far.visible = seen && d >= CLOSE;
+      }
     };
     return view;
   }

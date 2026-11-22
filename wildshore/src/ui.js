@@ -19,7 +19,7 @@
     hud: $('hud'), hearts: $('hearts'), meat: $('meat-count'), zone: $('zone-name'), clock: $('clock'),
     objective: $('objective'), toast: $('toast'), prompt: $('prompt'), promptText: $('prompt-text'),
     talk: $('talk'), talkName: $('talk-name'), talkText: $('talk-text'), touch: $('touch'), useBtn: $('btn-use'),
-    air: $('air'), airFill: $('air-fill'), fade: $('fade'), note: $('title-note'), mute: $('mute-btn'), slots: $('slots'), swingBtn: $('btn-swing'), eatBtn: $('eat-btn'),
+    air: $('air'), airFill: $('air-fill'), fade: $('fade'), note: $('title-note'), mute: $('mute-btn'), slots: $('slots'), swingBtn: $('btn-swing'), jumpBtn: $('btn-jump'), eatBtn: $('eat-btn'),
   };
 
   const shown = { hearts: -1, meat: -1, prompt: null, bar: '' };
@@ -81,7 +81,8 @@
 
   let slotHandler = null;
 
-  // bar: { selected, swingLabel, slots: [{ id, name, level }] }: the weapons owned.
+  // bar: { selected, swingLabel, jumpLabel, slots: [{ id, name, level }] }: the
+  // weapons owned, and what the two touch buttons say.
   function setBar(bar) {
     const signature = bar.slots.map((s) => s.id + s.level).join(',');
     if (signature !== shown.bar) {
@@ -101,6 +102,7 @@
     }
     [...el.slots.children].forEach((b, n) => b.classList.toggle('on', n === bar.selected));
     setText(el.swingBtn, bar.swingLabel);
+    setText(el.jumpBtn, bar.jumpLabel || 'Jump');
   }
 
   // ---------- speech ----------

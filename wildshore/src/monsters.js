@@ -447,14 +447,14 @@
       return hits;
     }
 
-    // The nearest creature roughly in front of the player. With `hostile`,
-    // animals and fish are ignored.
-    function nearest(range, cone, hostile) {
+    // The nearest creature roughly in front of the player. `kind` narrows it:
+    // 'monster' for night monsters only, 'shark' for sharks only.
+    function nearest(range, cone, kind) {
       const p = G.player;
       const hx = Math.sin(p.heading), hz = Math.cos(p.heading);
       let best = null;
       for (const m of G.zone.monsters) {
-        if (!m.alive || (hostile && m.den.wild)) continue;
+        if (!m.alive || (kind === 'monster' && always(m)) || (kind === 'shark' && m.sp.body !== 'shark')) continue;
         const dx = m.x - p.x, dz = m.z - p.z, d = Math.hypot(dx, dz) || 0.001;
         if (d > range || (d > 4 && (dx * hx + dz * hz) / d < cone)) continue;
         if (!best || d < best.d) best = { d, x: m.x, y: centreY(m), z: m.z };
@@ -473,9 +473,10 @@
       return false;
     }
 
-    // Sends every creature back to its den (after the player is knocked out).
-    function reset(rt) {
-      for (const m of rt.monsters) if (m.alive) vanish(m, false);
+    // Sends every creature back to its den (after the player is knocked
+    // out). With `monstersOnly`, the animals stay where they are.
+    function reset(rt, monstersOnly) {
+      for (const m of rt.monsters) if (m.alive && !(monstersOnly && always(m))) vanish(m, false);
     }
 
     return { populate, update, strike, nearest, boltHit, damage, reset };

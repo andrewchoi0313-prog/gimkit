@@ -106,7 +106,7 @@
   // ---------- the islands ----------
 
   const SIZE = 2100;
-  const CELLS = 336;
+  const CELLS = 512;
   const RING = 730; // the six outer islands sit on a circle this far from the middle
 
   function outer(id, name, biome, degrees, r) {
@@ -137,8 +137,10 @@
     // The house's floor is at height 4. The land is a whisker lower so no grass shows through it.
     flats: [{ x: HOUSE.x, z: HOUSE.z, r: 20, blend: 12, level: 3.94 }],
     paths: [
-      [[0, 290], [0, 372]],                  // house to the dock
-      [[0, 276], [14, 180], [-24, 60], [0, -40]],
+      [[0, 290], [0, 372]],                              // house to the dock
+      [[0, 276], [14, 180], [-24, 60], [0, -40]],        // north through the island
+      [[-24, 60], [-52, 72], [-70, 70]],                 // west to the lake
+      [[0, -40], [70, -100], [112, -138]],               // up Lookout Hill
     ],
   };
 
@@ -146,6 +148,14 @@
   // there for the treasure chest.
   const bog = ISLANDS.find((I) => I.id === 'bog');
   WORLD.flats.push({ x: bog.x, z: bog.z, r: 7, blend: 10, level: 1.9 });
+
+  // Landmarks shaped into the ground.
+  const at = (id) => ISLANDS.find((I) => I.id === id);
+  const inLake = (x, z, margin) => dist(x, z, LAKE.x, LAKE.z) < LAKE.r + 14 + (margin || 0);
+  const LAKE = { x: -120, z: 70, r: 34, depth: -2.3 };                          // Stillwater, in Hearth Isle's woods
+  const HILL = { x: 130, z: -150, r: 110, height: 16 };                         // Lookout Hill, on Hearth Isle
+  const PEAK = { x: at('frost').x + 50, z: at('frost').z - 40, r: 150, height: 24 };        // Winterholm's summit
+  const VOLCANO = { x: at('ash').x - 70, z: at('ash').z + 50, r: 100, height: 34, crater: 20 }; // on Cinder Rock
 
   // The island a point belongs to, and how far inside its rim the point is
   // (negative inside, positive out at sea).
@@ -191,13 +201,35 @@
     else if (island.biome === 'swamp') shape = 0.75 + (n2 - 0.5) * 3.4;
     else if (island.biome === 'blight') shape = 7 + ridge * 9;
     else shape = 4.5 + (n1 - 0.5) * 8;
+    // Hills and mountains.
+    if (island.id === 'home') shape += HILL.height * smooth(HILL.r, 18, dist(x, z, HILL.x, HILL.z));
+    else if (island.id === 'frost') shape += PEAK.height * smooth(PEAK.r, 20, dist(x, z, PEAK.x, PEAK.z));
+    else if (island.id === 'ash') {
+      // A cone with a bowl scooped out of the top.
+      const d = dist(x, z, VOLCANO.x, VOLCANO.z);
+      shape += VOLCANO.height * smooth(VOLCANO.r, VOLCANO.crater + 2, d) - 15 * smooth(VOLCANO.crater, 5, d);
+    }
     let h = -6 + 6.6 * land + inland * (shape - 0.6);
+    // Near the islands the seabed rolls a little; far out it is dead flat.
+    h += (fbm(x * 0.05, z * 0.05, 2, 14) - 0.5) * 1.8 * smooth(88, 55, edge) * (1 - land);
+    if (island.id === 'home') {
+      // The lake: a bowl of water with a ragged shore.
+      const shore = dist(x, z, LAKE.x, LAKE.z) + (fbm(x * 0.05 + 7, z * 0.05 + 2, 2, 15) - 0.5) * 16;
+      h += (LAKE.depth - h) * smooth(LAKE.r + 12, LAKE.r - 8, shore);
+    }
     for (const f of WORLD.flats) {
       const k = smooth(f.r + f.blend, f.r, dist(x, z, f.x, f.z));
       if (k > 0) h += (f.level - h) * k;
     }
     return h;
   }
+
+  // Every other chest stands on a small level terrace cut into its hillside.
+  // (The heights are read before any terrace is added, so they are the
+  // natural ones.)
+  const terraces = ISLANDS.filter((I) => I.id !== 'home' && I.id !== 'bog')
+    .map((I) => ({ x: I.x, z: I.z, r: 3.5, blend: 9, level: Math.max(1.8, worldHeight(I.x, I.z)) }));
+  WORLD.flats.push(...terraces);
 
   // Samples the height onto a grid and returns a lookup that matches the
   // triangles the 3D ground is drawn with.
@@ -255,7 +287,8 @@
       for (const t of list) if (Math.abs(t.x - x) < min && Math.abs(t.z - z) < min && dist(x, z, t.x, t.z) < min) return false;
       return true;
     };
-    const clear = (x, z, margin) => dist(x, z, HOUSE.x, HOUSE.z) < 22 + margin || distToPaths(def.paths, x, z) < 2.6 + margin;
+    const clear = (x, z, margin) => dist(x, z, HOUSE.x, HOUSE.z) < 22 + margin || distToPaths(def.paths, x, z) < 2.6 + margin
+      || ISLANDS.some((I) => I.id !== 'home' && dist(x, z, I.x, I.z) < 4.5 + margin);
     const spot = () => [(rng() * 2 - 1) * half, (rng() * 2 - 1) * half];
 
     for (let i = 0; i < 60000 && trees.length < 2900; i++) {
@@ -312,24 +345,40 @@
     // Under the sea: reefs packed with coral on the slopes round every island,
     // with thinner coral and weed between them...
     const corals = [], reefs = [];
-    const coral = (x, z, h) => corals.push({ x, z, y: h, kind: Math.floor(rng() * 3), scale: 0.6 + rng() * 1.1, tint: Math.floor(rng() * 6), turn: rng() * 6.28 });
+    const coral = (x, z, h) => corals.push({ x, z, y: h, kind: Math.floor(rng() * 4), scale: 0.6 + rng() * 1.1, tint: Math.floor(rng() * 6), turn: rng() * 6.28 });
     for (let i = 0; i < 120000 && reefs.length < 150; i++) {
       const [x, z] = spot();
       const h = heightAt(x, z);
-      if (h > -2.2 || h < -5.7 || !far(reefs, x, z, 26)) continue;
+      if (h > -2.2 || h < -5.7 || inLake(x, z, 12) || !far(reefs, x, z, 26)) continue;
       reefs.push({ x, z });
       for (let n = 0; n < 44; n++) {
         const a = rng() * 6.28, r = Math.sqrt(rng()) * 10;
         const cx = x + Math.cos(a) * r, cz = z + Math.sin(a) * r, ch = heightAt(cx, cz);
-        if (ch < -1.7) coral(cx, cz, ch);
+        if (ch < -1.7 && !inLake(cx, cz)) coral(cx, cz, ch);
       }
     }
     for (let i = 0, loose = 0; i < 120000 && loose < 900; i++) {
       const [x, z] = spot();
       const h = heightAt(x, z);
-      if (h > -1.7 || (h < -5.7 && (nearestIsland(x, z).edge > 150 || rng() > 0.1))) continue;
+      if (h > -1.7 || inLake(x, z) || (h < -5.7 && (nearestIsland(x, z).edge > 150 || rng() > 0.1))) continue;
       coral(x, z, h);
       loose++;
+    }
+    // The lake is fresh water: lily pads float on it and reeds stand round
+    // its edge. (Their own dice, so the rest of the world stays as it was.)
+    const fresh = mulberry32(4471);
+    const pads = [], reeds = [];
+    for (let i = 0; i < 4000 && pads.length < 70; i++) {
+      const a = fresh() * 6.28, r = Math.sqrt(fresh()) * (LAKE.r + 12);
+      const x = LAKE.x + Math.cos(a) * r, z = LAKE.z + Math.sin(a) * r, h = heightAt(x, z);
+      if (h > -0.45 || h < -2.1 || !far(pads, x, z, 2.2)) continue;
+      pads.push({ x, z, scale: 0.7 + fresh() * 0.7, turn: fresh() * 6.28, flower: fresh() < 0.35 });
+    }
+    for (let i = 0; i < 6000 && reeds.length < 150; i++) {
+      const a = fresh() * 6.28, r = LAKE.r - 14 + fresh() * 30;
+      const x = LAKE.x + Math.cos(a) * r, z = LAKE.z + Math.sin(a) * r, h = heightAt(x, z);
+      if (h > 0.45 || h < -0.7 || distToPaths(def.paths, x, z) < 4) continue;
+      reeds.push({ x, z, y: h, scale: 0.8 + fresh() * 0.7, turn: fresh() * 6.28 });
     }
     // ...bright reef fish swimming over every reef...
     const reef = [];
@@ -357,7 +406,7 @@
     const dock = { x: HOUSE.x, z0: shore - 3, z1: shore + 15, top: 0.9 };
     // A treasure chest at the heart of each of the other islands.
     const chests = ISLANDS.filter((I) => I.id !== 'home').map((I) => ({ id: I.id, x: I.x, z: I.z, y: heightAt(I.x, I.z) }));
-    return { trees, rocks, tufts, corals, spawns, dock, chests, boat: { x: dock.x + 2.6, z: dock.z1 - 2 } };
+    return { trees, rocks, tufts, corals, pads, reeds, spawns, dock, chests, boat: { x: dock.x + 2.6, z: dock.z1 - 2 } };
   }
 
   // Builds everything the game needs to know about the world.
@@ -367,7 +416,7 @@
   }
 
   Object.assign(exports, {
-    SIZE, RING, ISLANDS, HOUSE, WORLD, SPECIES, GROWTH,
+    SIZE, RING, ISLANDS, HOUSE, WORLD, SPECIES, GROWTH, LAKE, HILL, PEAK, VOLCANO, woodsOnHome,
     mulberry32, noise, fbm, smooth, dist, distToPaths,
     nearestIsland, biomeAt, worldHeight, buildTerrain, buildZone,
   });

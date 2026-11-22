@@ -1,12 +1,30 @@
 // Characters and things: the explorer, night monsters, wild animals, weapons,
 // hearts, meat, the boat, treasure chests, blaster bolts and sparkles.
+// Living things are built from smooth rounded shapes; made things (the boat,
+// chests, weapons) keep their straight edges.
 (function () {
   'use strict';
 
   const WS = (window.WS = window.WS || {});
-  const { lambert, basic, add, glowTexture, glyphTexture } = WS.Gfx;
+  const { lambert, soft, basic, add, ball, shadeByHeight, glowTexture, glyphTexture } = WS.Gfx;
 
   const box = (w, h, d) => new THREE.BoxGeometry(w, h, d);
+  const pill = (r, len) => new THREE.CapsuleGeometry(r, len, 4, 12);   // a rod with rounded ends
+  const cone = (r, h) => new THREE.ConeGeometry(r, h, 12);
+
+  const UNIT = ball(1, 2);
+  const SMALL = ball(1, 1); // eyes, noses and other little things
+  // Bodies are painted darker underneath and lighter on top.
+  const BODY = shadeByHeight(ball(1, 3), 0.72, 1.14);
+
+  // Adds a ball stretched to (sx, sy, sz) at (x, y, z). Painted materials
+  // get the painted ball: without paint they would draw black.
+  function orb(parent, material, sx, sy, sz, x, y, z, castShadow) {
+    const small = Math.max(sx, sy, sz) < 0.13;
+    const m = add(parent, material.vertexColors ? BODY : small ? SMALL : UNIT, material, x, y, z, castShadow);
+    m.scale.set(sx, sy, sz);
+    return m;
+  }
   let glowMap = null;
   const glow = () => glowMap || (glowMap = glowTexture());
 
@@ -24,63 +42,61 @@
 
   // ---------- people ----------
 
-  // A blocky person standing with their feet at y = 0 and facing +z.
+  // A rounded person standing with their feet at y = 0 and facing +z.
   // `look` picks colours and extras: hat, scarf, pack, lantern.
   function makeFigure(look) {
     const o = Object.assign({ coat: 0x3f7fd0, legs: 0x3a4a63, skin: 0xf0c49a, hair: 0x6b4226, boots: 0x5f4129, hat: 'hair' }, look);
     const group = new THREE.Group();
-    const coat = lambert(o.coat);
-    const skin = lambert(o.skin);
-    const dark = lambert(0x2a2a33);
+    const coat = soft(o.coat);
+    const skin = soft(o.skin);
+    const dark = soft(0x2a2a33);
 
-    const torso = add(group, box(0.66, 0.74, 0.42), coat, 0, 0.99, 0);
+    const torso = add(group, pill(0.28, 0.2), coat, 0, 0.99, 0);
+    torso.scale.set(1.15, 1, 0.8);
     const head = new THREE.Group();
     head.position.set(0, 1.36, 0);
     group.add(head);
-    add(head, box(0.52, 0.52, 0.5), skin, 0, 0.26, 0);
-    add(head, box(0.08, 0.1, 0.03), dark, 0.12, 0.3, 0.26, false);
-    add(head, box(0.08, 0.1, 0.03), dark, -0.12, 0.3, 0.26, false);
-    const hatMat = lambert(o.hatColor || o.hair);
-    if (o.hat === 'hair') {
-      add(head, box(0.58, 0.18, 0.56), hatMat, 0, 0.58, -0.01);
-      add(head, box(0.58, 0.34, 0.14), hatMat, 0, 0.4, -0.24);
-    } else if (o.hat === 'cap') {
-      add(head, box(0.56, 0.2, 0.54), hatMat, 0, 0.6, 0);
-      add(head, box(0.5, 0.06, 0.3), hatMat, 0, 0.52, 0.36);
-    } else if (o.hat === 'brim') {
-      add(head, new THREE.CylinderGeometry(0.62, 0.62, 0.06, 10), hatMat, 0, 0.53, 0);
-      add(head, new THREE.CylinderGeometry(0.26, 0.32, 0.3, 8), hatMat, 0, 0.7, 0);
-      add(head, box(0.06, 0.34, 0.04), lambert(0xf2c23a), 0.2, 0.86, 0, false).rotation.z = -0.3;
+    orb(head, skin, 0.29, 0.29, 0.28, 0, 0.27, 0);
+    orb(head, dark, 0.045, 0.055, 0.03, 0.11, 0.3, 0.262, false);
+    orb(head, dark, 0.045, 0.055, 0.03, -0.11, 0.3, 0.262, false);
+    const hatMat = soft(o.hatColor || o.hair);
+    if (o.hat === 'cap') {
+      orb(head, hatMat, 0.31, 0.2, 0.3, 0, 0.42, -0.01);
+      orb(head, hatMat, 0.2, 0.035, 0.2, 0, 0.4, 0.3);       // the peak
+    } else {
+      orb(head, hatMat, 0.31, 0.24, 0.3, 0, 0.36, -0.04);    // hair
     }
-    if (o.scarf) add(group, box(0.7, 0.15, 0.48), lambert(o.scarf), 0, 1.36, 0);
-    if (o.pack) add(group, box(0.5, 0.56, 0.24), lambert(o.pack), 0, 1.02, -0.32);
+    if (o.scarf) add(group, new THREE.TorusGeometry(0.2, 0.075, 8, 18).rotateX(Math.PI / 2), soft(o.scarf), 0, 1.36, 0).scale.set(1.1, 1, 0.85);
+    if (o.pack) orb(group, soft(o.pack), 0.25, 0.3, 0.16, 0, 1.02, -0.3);
 
-    function limb(x, y, w, h, d, mat, tipMat) {
+    function limb(x, y, r, len, mat, tipMat, foot) {
       const pivot = new THREE.Group();
       pivot.position.set(x, y, 0);
-      add(pivot, box(w, h, d), mat, 0, -h / 2, 0);
-      add(pivot, box(w + 0.02, 0.2, d + 0.06), tipMat, 0, -h + 0.1, 0.02);
+      add(pivot, pill(r, len - 2 * r), mat, 0, -len / 2, 0);
+      if (foot) orb(pivot, tipMat, r + 0.02, 0.1, r + 0.07, 0, -len + 0.06, 0.04);
+      else orb(pivot, tipMat, r + 0.01, r + 0.01, r + 0.01, 0, -len + 0.04, 0);
       group.add(pivot);
       return pivot;
     }
-    const boots = lambert(o.boots);
-    const armL = limb(0.44, 1.3, 0.2, 0.6, 0.22, coat, skin);
-    const armR = limb(-0.44, 1.3, 0.2, 0.6, 0.22, coat, skin);
-    const legL = limb(0.17, 0.62, 0.24, 0.62, 0.26, lambert(o.legs), boots);
-    const legR = limb(-0.17, 0.62, 0.24, 0.62, 0.26, lambert(o.legs), boots);
+    const boots = soft(o.boots);
+    const armL = limb(0.42, 1.3, 0.1, 0.6, coat, skin, false);
+    const armR = limb(-0.42, 1.3, 0.1, 0.6, coat, skin, false);
+    const legL = limb(0.16, 0.62, 0.12, 0.62, soft(o.legs), boots, true);
+    const legR = limb(-0.16, 0.62, 0.12, 0.62, soft(o.legs), boots, true);
 
     // Whatever is held points forward out of the right hand.
     const hand = new THREE.Group();
     hand.position.set(0, -0.55, 0.12);
     armR.add(hand);
 
-    const figure = { group, torso, head, armL, armR, legL, legR, hand, phase: 0, light: null };
+    const figure = { group, torso, head, armL, armR, legL, legR, hand, phase: 0, light: null, glow: null };
     if (o.lantern) {
       // A little lantern on the belt, so nights are never pitch black.
       const lantern = new THREE.Group();
       lantern.position.set(0.3, 0.72, 0.26);
-      add(lantern, box(0.14, 0.18, 0.14), basic(0xffd27a), 0, 0, 0, false);
-      lantern.add(glowSprite(0xffc56a, 1.1));
+      add(lantern, pill(0.07, 0.08), basic(0xffd27a), 0, 0, 0, false);
+      figure.glow = glowSprite(0xffc56a, 1.1);
+      lantern.add(figure.glow);
       figure.light = new THREE.PointLight(0xffc56a, 0.25, 13, 1.5);
       figure.light.position.set(0, 0.9, 0.5);
       lantern.add(figure.light);
@@ -140,7 +156,7 @@
     const woodMat = lambert(0x7a5230);
     const steel = lambert(0xdfe7ef, { emissive: 0x30363c });
     if (kind === 'stick') {
-      add(g, new THREE.CylinderGeometry(0.04, 0.055, 1.3, 5).rotateX(Math.PI / 2), woodMat, 0, 0, 0.55);
+      add(g, new THREE.CylinderGeometry(0.04, 0.055, 1.3, 10).rotateX(Math.PI / 2), soft(0x7a5230), 0, 0, 0.55);
       add(g, box(0.05, 0.05, 0.22), woodMat, 0.06, 0.03, 0.8).rotation.y = 0.6;
     } else if (kind === 'sword') {
       add(g, new THREE.CylinderGeometry(0.045, 0.045, 0.34, 5).rotateX(Math.PI / 2), woodMat, 0, 0, 0.05);
@@ -187,6 +203,15 @@
     const c = new THREE.Color(hex);
     return c.r * 0.3 + c.g * 0.6 + c.b * 0.1 > 0.7;
   };
+  const body = (color, rest, extra) => soft(color, Object.assign({ emissive: rest, vertexColors: true }, extra || {}));
+
+  // Round eyes with dark pupils, looking forward.
+  function eyes(parent, y, z, apart, size, white) {
+    for (const side of [1, -1]) {
+      orb(parent, basic(white), size, size, size * 0.7, side * apart, y, z, false);
+      orb(parent, basic(0x15151c), size * 0.5, size * 0.5, size * 0.4, side * apart, y, z + size * 0.5, false);
+    }
+  }
 
   // A hopping blob.
   function makeBlob(sp, color) {
@@ -196,15 +221,13 @@
     inner.scale.setScalar(sp.scale);
     group.add(inner);
     const rest = shade(tint, sp.glow ? 0.5 : 0.14);
-    const mat = lambert(tint, { emissive: rest });
-    const body = add(inner, new THREE.IcosahedronGeometry(0.75, 1), mat, 0, 0.62, 0);
-    body.scale.y = 0.85;
-    const eyeMat = basic(bright(tint) ? 0x26303c : 0xfdf6c8);
-    add(inner, new THREE.SphereGeometry(0.12, 6, 5), eyeMat, 0.25, 0.8, 0.6, false);
-    add(inner, new THREE.SphereGeometry(0.12, 6, 5), eyeMat, -0.25, 0.8, 0.6, false);
-    const crest = lambert(shade(tint, 0.62));
-    add(inner, new THREE.ConeGeometry(0.13, 0.42, 5), crest, 0.32, 1.22, 0).rotation.z = -0.45;
-    add(inner, new THREE.ConeGeometry(0.13, 0.42, 5), crest, -0.32, 1.22, 0).rotation.z = 0.45;
+    const mat = body(tint, rest);
+    const m = add(inner, BODY, mat, 0, 0.62, 0);
+    m.scale.set(0.75, 0.64, 0.75);
+    eyes(inner, 0.82, 0.62, 0.25, 0.14, bright(tint) ? 0xdfe8ee : 0xfdf6c8);
+    const crest = soft(shade(tint, 0.62));
+    add(inner, cone(0.13, 0.42), crest, 0.32, 1.2, 0).rotation.z = -0.45;
+    add(inner, cone(0.13, 0.42), crest, -0.32, 1.2, 0).rotation.z = 0.45;
     if (sp.glow) inner.add(glowSprite(tint, 2.6)).position.y = 0.7;
     return { group, inner, mat, rest, radius: 0.72 * sp.scale, height: 1.3 * sp.scale };
   }
@@ -217,28 +240,27 @@
     inner.scale.setScalar(sp.scale);
     group.add(inner);
     const rest = shade(tint, sp.glow ? 0.35 : 0.08);
-    const mat = lambert(tint, { emissive: rest });
-    const darkMat = lambert(shade(tint, 0.62));
-    add(inner, box(1.15, 1.1, 0.8), mat, 0, 1.35, 0);
-    add(inner, box(0.8, 0.6, 0.1), lambert(shade(tint, 1.25)), 0, 1.25, 0.41, false);
-    add(inner, box(0.62, 0.5, 0.6), mat, 0, 2.05, 0.12);
-    const eyeMat = basic(sp.glow ? 0xfff0a0 : 0xffd84a);
-    add(inner, box(0.13, 0.1, 0.04), eyeMat, 0.16, 2.1, 0.43, false);
-    add(inner, box(0.13, 0.1, 0.04), eyeMat, -0.16, 2.1, 0.43, false);
-    add(inner, new THREE.ConeGeometry(0.12, 0.45, 5), darkMat, 0.36, 2.4, 0.1).rotation.z = -0.5;
-    add(inner, new THREE.ConeGeometry(0.12, 0.45, 5), darkMat, -0.36, 2.4, 0.1).rotation.z = 0.5;
-    function limb(x, y, w, h, d, fist) {
+    const mat = body(tint, rest);
+    const darkMat = soft(shade(tint, 0.62));
+    const chest = add(inner, BODY, mat, 0, 1.35, 0);
+    chest.scale.set(0.66, 0.64, 0.48);
+    orb(inner, soft(shade(tint, 1.25)), 0.4, 0.36, 0.12, 0, 1.22, 0.4, false);   // a paler belly
+    orb(inner, mat, 0.34, 0.3, 0.33, 0, 2.05, 0.12);
+    eyes(inner, 2.1, 0.4, 0.15, 0.085, sp.glow ? 0xfff0a0 : 0xffd84a);
+    add(inner, cone(0.12, 0.45), darkMat, 0.34, 2.38, 0.1).rotation.z = -0.5;
+    add(inner, cone(0.12, 0.45), darkMat, -0.34, 2.38, 0.1).rotation.z = 0.5;
+    function limb(x, y, r, len, fist) {
       const pivot = new THREE.Group();
       pivot.position.set(x, y, 0);
-      add(pivot, box(w, h, d), darkMat, 0, -h / 2, 0);
-      if (fist) add(pivot, box(w + 0.12, 0.4, d + 0.12), mat, 0, -h - 0.1, 0.02);
+      add(pivot, pill(r, len - 2 * r), darkMat, 0, -len / 2, 0);
+      if (fist) orb(pivot, mat, r + 0.09, r + 0.07, r + 0.11, 0, -len - 0.08, 0.02);
       inner.add(pivot);
       return pivot;
     }
-    const armL = limb(0.78, 1.82, 0.36, 1.2, 0.4, true);
-    const armR = limb(-0.78, 1.82, 0.36, 1.2, 0.4, true);
-    const legL = limb(0.32, 0.82, 0.42, 0.82, 0.46, false);
-    const legR = limb(-0.32, 0.82, 0.42, 0.82, 0.46, false);
+    const armL = limb(0.8, 1.82, 0.19, 1.2, true);
+    const armR = limb(-0.8, 1.82, 0.19, 1.2, true);
+    const legL = limb(0.32, 0.82, 0.22, 0.82, false);
+    const legR = limb(-0.32, 0.82, 0.22, 0.82, false);
     return { group, inner, mat, rest, armL, armR, legL, legR, radius: 0.72 * sp.scale, height: 2.4 * sp.scale };
   }
 
@@ -250,14 +272,13 @@
     inner.scale.setScalar(sp.scale);
     group.add(inner);
     const rest = shade(tint, 0.55);
-    const mat = lambert(tint, { emissive: rest, transparent: true, opacity: 0.8 });
-    add(inner, new THREE.IcosahedronGeometry(0.55, 1), mat, 0, 0, 0);
-    add(inner, new THREE.IcosahedronGeometry(0.3, 0), basic(0xffffff), 0, 0, 0, false);
-    const eyeMat = basic(0x26303c);
-    add(inner, new THREE.SphereGeometry(0.08, 6, 5), eyeMat, 0.17, 0.08, 0.5, false);
-    add(inner, new THREE.SphereGeometry(0.08, 6, 5), eyeMat, -0.17, 0.08, 0.5, false);
+    const mat = soft(tint, { emissive: rest, transparent: true, opacity: 0.8 });
+    orb(inner, mat, 0.55, 0.55, 0.55, 0, 0, 0);
+    orb(inner, basic(0xffffff), 0.3, 0.3, 0.3, 0, 0, 0, false);
+    eyes(inner, 0.08, 0.5, 0.17, 0.085, 0x26303c);
     for (let i = 0; i < 3; i++) {
-      add(inner, new THREE.TetrahedronGeometry(0.2 - i * 0.045, 0), mat, 0, -0.1 - i * 0.1, -0.6 - i * 0.34, false);
+      const r = 0.22 - i * 0.05;
+      orb(inner, mat, r, r, r, 0, -0.1 - i * 0.1, -0.6 - i * 0.34, false);   // a fading tail
     }
     inner.add(glowSprite(tint, 3.2));
     return { group, inner, mat, rest, radius: 0.6 * sp.scale, height: 1.1 * sp.scale };
@@ -274,7 +295,8 @@
 
   // ---------- wild animals ----------
 
-  // A four-legged animal (or a chicken) facing +z with its feet at y = 0.
+  // A four-legged animal (or a chicken) facing +z with its feet at y = 0,
+  // built from soft rounded shapes.
   function makeAnimal(sp) {
     const kind = sp.name.toLowerCase();
     const group = new THREE.Group();
@@ -282,63 +304,124 @@
     inner.scale.setScalar(sp.scale);
     group.add(inner);
     const rest = shade(sp.color, 0.1);
-    const mat = lambert(sp.color, { emissive: rest });
-    const dark = lambert(kind === 'sheep' ? 0x3a3a3a : shade(sp.color, 0.6));
+    const mat = body(sp.color, rest);
+    const dark = soft(kind === 'sheep' ? 0x3a3a3a : shade(sp.color, 0.6));
+    const cream = soft(0xf2ecdc);
     const legs = [];
-    const leg = (x, z, h, m) => {
+    const leg = (x, z, h, r, m) => {
       const pivot = new THREE.Group();
       pivot.position.set(x, h, z);
-      add(pivot, box(0.16, h, 0.16), m, 0, -h / 2, 0);
+      add(pivot, pill(r, h - 2 * r), m, 0, -h / 2, 0);
       inner.add(pivot);
       legs.push(pivot);
     };
+    const trunk = (sx, sy, sz, y) => {
+      const m = add(inner, BODY, mat, 0, y, 0);
+      m.scale.set(sx, sy, sz);
+    };
+    const four = (dx, dz, h, r, m) => { for (const [x, z] of [[dx, dz], [-dx, dz], [dx, -dz], [-dx, -dz]]) leg(x, z, h, r, m); };
+    const dots = (y, z, apart) => { for (const side of [1, -1]) orb(inner, basic(0x15151c), 0.04, 0.045, 0.03, side * apart, y, z, false); };
+
     if (kind === 'chicken') {
-      add(inner, box(0.5, 0.5, 0.62), mat, 0, 0.62, 0);
-      add(inner, box(0.3, 0.34, 0.3), mat, 0, 1.0, 0.3);
-      add(inner, box(0.1, 0.16, 0.2), lambert(0xd9432f), 0, 1.24, 0.3, false);
-      add(inner, box(0.12, 0.1, 0.18), lambert(0xf2b23a), 0, 0.98, 0.52, false);
-      add(inner, box(0.4, 0.3, 0.2), mat, 0, 0.8, -0.38).rotation.x = -0.5;
-      const yellow = lambert(0xf2b23a);
-      leg(0.13, 0, 0.38, yellow);
-      leg(-0.13, 0, 0.38, yellow);
-    } else {
-      const tall = kind === 'deer' ? 0.72 : 0.5;
-      const fat = kind === 'sheep' ? 0.9 : kind === 'deer' ? 0.56 : 0.74;
-      add(inner, box(fat, kind === 'sheep' ? 0.78 : 0.62, 1.25), mat, 0, tall + 0.33, 0);
-      const head = add(inner, box(0.44, 0.44, 0.5), kind === 'sheep' ? dark : mat, 0, tall + 0.58, 0.82);
-      const eye = basic(0x1c1c22);
-      add(head, box(0.06, 0.08, 0.04), eye, 0.23, 0.06, 0.12, false);
-      add(head, box(0.06, 0.08, 0.04), eye, -0.23, 0.06, 0.12, false);
-      if (kind === 'cow') {
-        add(inner, box(0.76, 0.3, 0.5), lambert(0xf6f1e6), 0, tall + 0.5, -0.2, false);
-        add(head, box(0.34, 0.2, 0.14), lambert(0xf0b8b0), 0, -0.1, 0.28, false);
-        add(head, box(0.08, 0.2, 0.08), lambert(0xe9e2cf), 0.2, 0.3, 0, false);
-        add(head, box(0.08, 0.2, 0.08), lambert(0xe9e2cf), -0.2, 0.3, 0, false);
-      } else if (kind === 'pig') {
-        add(head, box(0.22, 0.16, 0.12), lambert(0xd98a94), 0, -0.06, 0.3, false);
-      } else if (kind === 'deer') {
-        head.position.y += 0.3;
-        add(inner, box(0.2, 0.5, 0.22), mat, 0, tall + 0.7, 0.6).rotation.x = 0.5;
-        add(head, box(0.05, 0.5, 0.05), lambert(0xe9e2cf), 0.16, 0.42, -0.05, false).rotation.z = -0.4;
-        add(head, box(0.05, 0.5, 0.05), lambert(0xe9e2cf), -0.16, 0.42, -0.05, false).rotation.z = 0.4;
+      trunk(0.27, 0.27, 0.34, 0.6);
+      orb(inner, mat, 0.16, 0.17, 0.16, 0, 0.98, 0.26);
+      for (let i = 0; i < 3; i++) orb(inner, soft(0xd9432f), 0.045, 0.06, 0.055, 0, 1.17 - i * 0.015, 0.33 - i * 0.08, false);   // the comb
+      orb(inner, soft(0xd9432f), 0.035, 0.06, 0.035, 0, 0.86, 0.38, false);
+      add(inner, cone(0.06, 0.16).rotateX(Math.PI / 2), soft(0xf2b23a), 0, 0.97, 0.45, false);
+      orb(inner, mat, 0.05, 0.2, 0.2, 0, 0.82, -0.36).rotation.x = -0.6;                                                       // tail feathers
+      for (const side of [1, -1]) orb(inner, soft(shade(sp.color, 0.9)), 0.07, 0.17, 0.24, side * 0.24, 0.62, -0.02, false);    // wings
+      dots(1.02, 0.4, 0.08);
+      leg(0.11, 0, 0.36, 0.03, soft(0xf2b23a));
+      leg(-0.11, 0, 0.36, 0.03, soft(0xf2b23a));
+    } else if (kind === 'sheep') {
+      trunk(0.48, 0.44, 0.7, 0.9);
+      for (const [x, y, z] of [[0.24, 1.2, 0.3], [-0.24, 1.2, 0.3], [0.2, 1.24, -0.2], [-0.22, 1.22, -0.25], [0, 1.28, 0.02], [0, 1.0, -0.62]]) orb(inner, mat, 0.24, 0.22, 0.26, x, y, z);   // woolly tufts
+      orb(inner, dark, 0.19, 0.21, 0.25, 0, 1.02, 0.78);
+      for (const side of [1, -1]) orb(inner, dark, 0.1, 0.05, 0.06, side * 0.22, 1.12, 0.7, false);
+      for (const side of [1, -1]) orb(inner, basic(0xf4f1e6), 0.035, 0.04, 0.03, side * 0.1, 1.08, 0.99, false);
+      four(0.24, 0.4, 0.5, 0.075, dark);
+    } else if (kind === 'cow') {
+      trunk(0.43, 0.42, 0.74, 0.96);
+      orb(inner, cream, 0.3, 0.22, 0.34, 0.2, 1.16, -0.1, false);                 // white patches
+      orb(inner, cream, 0.22, 0.24, 0.26, -0.28, 0.98, 0.3, false);
+      orb(inner, mat, 0.22, 0.22, 0.27, 0, 1.14, 0.86);
+      orb(inner, soft(0xf0b8b0), 0.17, 0.12, 0.13, 0, 1.06, 1.08, false);         // muzzle
+      for (const side of [1, -1]) {
+        add(inner, cone(0.045, 0.2), cream, side * 0.17, 1.4, 0.82, false).rotation.z = side * -0.5;
+        orb(inner, mat, 0.1, 0.05, 0.06, side * 0.26, 1.24, 0.8, false);
       }
-      for (const [x, z] of [[0.24, 0.42], [-0.24, 0.42], [0.24, -0.42], [-0.24, -0.42]]) leg(x, z, tall, dark);
+      add(inner, pill(0.025, 0.45), dark, 0, 0.9, -0.76).rotation.x = 0.25;        // tail
+      dots(1.2, 1.06, 0.12);
+      four(0.25, 0.45, 0.56, 0.085, dark);
+    } else if (kind === 'pig') {
+      trunk(0.4, 0.36, 0.62, 0.7);
+      orb(inner, mat, 0.26, 0.25, 0.26, 0, 0.82, 0.64);
+      add(inner, new THREE.CylinderGeometry(0.1, 0.11, 0.12, 12).rotateX(Math.PI / 2), soft(0xd98a94), 0, 0.78, 0.92, false);
+      for (const side of [1, -1]) add(inner, cone(0.08, 0.16), soft(0xd98a94), side * 0.16, 1.06, 0.6, false).rotation.z = side * -0.4;
+      add(inner, new THREE.TorusGeometry(0.07, 0.022, 6, 12), soft(0xd98a94), 0, 0.82, -0.64, false);   // a curly tail
+      dots(0.9, 0.87, 0.11);
+      four(0.22, 0.34, 0.36, 0.08, dark);
+    } else {
+      // A deer: slender, long-legged, with antlers.
+      trunk(0.29, 0.31, 0.66, 1.1);
+      orb(inner, cream, 0.2, 0.12, 0.5, 0, 0.9, 0, false);                         // pale belly
+      add(inner, pill(0.11, 0.42), soft(sp.color, { emissive: rest }), 0, 1.5, 0.62).rotation.x = 0.55;   // neck
+      orb(inner, mat, 0.15, 0.16, 0.24, 0, 1.82, 0.84);
+      orb(inner, soft(0x2a2a33), 0.05, 0.04, 0.04, 0, 1.78, 1.07, false);
+      for (const side of [1, -1]) {
+        add(inner, pill(0.022, 0.42), cream, side * 0.13, 2.14, 0.74, false).rotation.z = side * -0.35;
+        add(inner, pill(0.018, 0.2), cream, side * 0.24, 2.26, 0.78, false).rotation.z = side * -1.0;
+        orb(inner, mat, 0.09, 0.045, 0.05, side * 0.19, 1.92, 0.76, false);
+      }
+      orb(inner, cream, 0.09, 0.1, 0.08, 0, 1.2, -0.66, false);
+      dots(1.88, 1.03, 0.09);
+      four(0.17, 0.45, 0.8, 0.055, dark);
     }
     return { group, inner, mat, rest, legs, radius: 0.6 * sp.scale, height: 1.2 * sp.scale };
   }
 
   // A fish, modelled around its middle so it can swim just under the surface.
+  const FISH = shadeByHeight(ball(1, 2), 1.28, 0.86);   // pale belly, darker back
   function makeFish(sp, color) {
     const tint = color || sp.color;
     const group = new THREE.Group();
     const inner = new THREE.Group();
     group.add(inner);
     const rest = shade(tint, 0.35);
-    const mat = lambert(tint, { emissive: rest });
-    add(inner, box(0.2, 0.34, 0.7), mat, 0, 0, 0);
-    add(inner, box(0.06, 0.4, 0.3), lambert(shade(tint, 0.7)), 0, 0, -0.5).rotation.x = 0.78;
-    add(inner, box(0.22, 0.08, 0.08), basic(0x1c1c22), 0, 0.06, 0.26, false);
+    const mat = body(tint, rest);
+    add(inner, FISH, mat, 0, 0, 0).scale.set(0.13, 0.2, 0.4);
+    const fin = soft(shade(tint, 0.7));
+    orb(inner, fin, 0.03, 0.2, 0.15, 0, 0, -0.5);            // tail
+    orb(inner, fin, 0.025, 0.1, 0.16, 0, 0.19, -0.02, false); // back fin
+    for (const side of [1, -1]) orb(inner, basic(0x15151c), 0.03, 0.035, 0.03, side * 0.1, 0.05, 0.24, false);
     return { group, inner, mat, rest, legs: [], radius: 0.55, height: 0.5 };
+  }
+
+  // A shark: a long grey body with a white belly, a tall back fin and a
+  // crescent tail.
+  const SHARK = shadeByHeight(ball(1, 2), [1.75, 1.7, 1.65], [0.92, 0.94, 0.98]);
+  function makeShark(sp) {
+    const group = new THREE.Group();
+    const inner = new THREE.Group();
+    group.add(inner);
+    const rest = shade(sp.color, 0.2);
+    const mat = body(sp.color, rest);
+    const fin = soft(shade(sp.color, 0.85), { emissive: rest });
+    add(inner, SHARK, mat, 0, 0, 0.1).scale.set(0.44, 0.42, 1.5);
+    add(inner, cone(0.27, 1.1).rotateX(-Math.PI / 2), fin, 0, 0.02, -1.55);                 // the body narrows to the tail
+    add(inner, cone(0.34, 0.8), fin, 0, 0.62, 0.05).scale.set(0.2, 1, 1);                   // back fin
+    add(inner, cone(0.26, 0.85), fin, 0, 0.3, -2.2).scale.set(0.16, 1, 1);                  // tail, upper
+    const lower = add(inner, cone(0.2, 0.55), fin, 0, -0.26, -2.15);
+    lower.scale.set(0.16, 1, 1);
+    lower.rotation.x = Math.PI;
+    for (const side of [1, -1]) {
+      const flipper = add(inner, cone(0.2, 0.7), fin, side * 0.56, -0.16, 0.45);
+      flipper.scale.set(1, 1, 0.2);
+      flipper.rotation.z = side * -1.9;
+      orb(inner, basic(0x101014), 0.04, 0.045, 0.04, side * 0.3, 0.08, 1.15, false);
+    }
+    orb(inner, soft(0x2a2a33), 0.2, 0.02, 0.1, 0, -0.2, 1.2, false);                       // a grim mouth
+    return { group, inner, mat, rest, legs: [], radius: 0.95, height: 0.8 };
   }
 
   // ---------- pickups ----------
@@ -348,30 +431,10 @@
     shape.moveTo(0, -0.42);
     shape.bezierCurveTo(-0.75, 0.05, -0.4, 0.58, 0, 0.22);
     shape.bezierCurveTo(0.4, 0.58, 0.75, 0.05, 0, -0.42);
-    const geometry = new THREE.ExtrudeGeometry(shape, { depth: 0.18, bevelEnabled: false, curveSegments: 6 }).translate(0, 0, -0.09);
+    const geometry = new THREE.ExtrudeGeometry(shape, { depth: 0.14, bevelEnabled: true, bevelThickness: 0.04, bevelSize: 0.04, bevelSegments: 3, curveSegments: 14 }).translate(0, 0, -0.07);
     const group = new THREE.Group();
-    add(group, geometry, lambert(0xf0605d, { emissive: 0x6a1414 }), 0, 0, 0);
+    add(group, geometry, soft(0xf0605d, { emissive: 0x6a1414 }), 0, 0, 0);
     return group;
-  }
-
-  // A shark, modelled around its middle like the fish.
-  function makeShark(sp) {
-    const group = new THREE.Group();
-    const inner = new THREE.Group();
-    group.add(inner);
-    const rest = shade(sp.color, 0.2);
-    const mat = lambert(sp.color, { emissive: rest });
-    add(inner, box(0.75, 0.7, 2.4), mat, 0, 0, 0);
-    add(inner, box(0.55, 0.5, 0.8), mat, 0, -0.02, 1.5);
-    add(inner, box(0.6, 0.2, 2.2), lambert(0xeef2f4), 0, -0.3, 0.1, false);
-    add(inner, new THREE.ConeGeometry(0.36, 0.8, 4), mat, 0, 0.7, 0).scale.set(0.22, 1, 1);
-    add(inner, box(0.4, 0.4, 0.9), mat, 0, 0, -1.5);
-    add(inner, box(0.08, 1.1, 0.5), mat, 0, 0.1, -2.05).rotation.x = 0.3;
-    for (const side of [-1, 1]) {
-      add(inner, box(0.7, 0.07, 0.45), mat, side * 0.6, -0.2, 0.5).rotation.z = side * -0.4;
-      add(inner, box(0.05, 0.1, 0.1), basic(0x101014), side * 0.29, 0.08, 1.7, false);
-    }
-    return { group, inner, mat, rest, legs: [], radius: 0.95, height: 0.8 };
   }
 
   // A snorkel mask: a glass face-plate with a tube.
@@ -388,9 +451,9 @@
     const group = new THREE.Group();
     const tilt = new THREE.Group();
     tilt.rotation.z = 0.6;
-    add(tilt, new THREE.IcosahedronGeometry(0.3, 1), lambert(0xb5563c, { emissive: 0x4a1c10 }), 0, 0.18, 0).scale.set(0.9, 1.2, 0.9);
-    add(tilt, new THREE.CylinderGeometry(0.06, 0.06, 0.45, 6), lambert(0xf2ecdc), 0, -0.25, 0);
-    add(tilt, new THREE.SphereGeometry(0.1, 6, 5), lambert(0xf2ecdc), 0, -0.5, 0);
+    orb(tilt, soft(0xb5563c, { emissive: 0x4a1c10 }), 0.27, 0.36, 0.27, 0, 0.18, 0);
+    add(tilt, new THREE.CylinderGeometry(0.06, 0.06, 0.45, 10), soft(0xf2ecdc), 0, -0.25, 0);
+    orb(tilt, soft(0xf2ecdc), 0.1, 0.1, 0.1, 0, -0.5, 0);
     group.add(tilt);
     group.add(glowSprite(0xffc890, 2.2));
     return group;

@@ -52,7 +52,7 @@ test('every den is a night monster, a wild animal or a fish, in the right place'
 test('coral grows under water round the islands', () => {
   assert.ok(L.corals.length >= 1000, 'only ' + L.corals.length + ' corals');
   for (const c of L.corals) assert.ok(c.y < -1.5, 'coral is poking out of the sea');
-  assert.equal(new Set(L.corals.map((c) => c.kind)).size, 3);
+  assert.equal(new Set(L.corals.map((c) => c.kind)).size, 4);
   assert.ok(L.spawns.filter((d) => d.depth !== undefined).length >= 100, 'too few reef fish');
 });
 
@@ -68,9 +68,70 @@ test('the dock runs from the beach out to water deep enough for the boat', () =>
   assert.ok(sea > 10);
 });
 
-test('each of the six far islands has a chest on dry land', () => {
+test('each of the six far islands has a chest on dry, level ground', () => {
   assert.equal(L.chests.length, 6);
-  for (const c of L.chests) assert.ok(c.y > 1, c.id + ' chest is in the water');
+  for (const c of L.chests) {
+    assert.ok(c.y > 1, c.id + ' chest is in the water');
+    // Its terrace is flat enough to stand beside, with no tree or rock on it.
+    for (let a = 0; a < 6.28; a += 0.8) {
+      const tilt = Math.abs(world.heightAt(c.x + Math.cos(a) * 2.5, c.z + Math.sin(a) * 2.5) - c.y);
+      assert.ok(tilt < 0.45, c.id + ' chest is on a slope: ' + tilt);
+    }
+    for (const t of [...L.trees, ...L.rocks]) assert.ok(Z.dist(t.x, t.z, c.x, c.z) > 4, c.id + ' chest has something growing on it');
+  }
+});
+
+test('the lake is fresh water: lily pads and reeds, fish, and no coral', () => {
+  const lake = Z.LAKE;
+  assert.ok(world.heightAt(lake.x, lake.z) < -1.5, 'the lake is dry');
+  // Dry land all the way round: the sea cannot get in, and the boat cannot either.
+  for (let a = 0; a < 6.28; a += 0.1) {
+    assert.ok(world.heightAt(lake.x + Math.cos(a) * (lake.r + 24), lake.z + Math.sin(a) * (lake.r + 24)) > 0.5, 'the lake leaks');
+  }
+  const inLake = (o) => Z.dist(o.x, o.z, lake.x, lake.z) < lake.r + 14;
+  assert.equal(L.corals.filter(inLake).length, 0);
+  assert.ok(L.pads.length >= 40 && L.reeds.length >= 80);
+  for (const p of L.pads) assert.ok(inLake(p) && world.heightAt(p.x, p.z) < -0.4, 'a lily pad is aground');
+  for (const r of L.reeds) assert.ok(Math.abs(r.y) < 0.75, 'a reed is not at the water\'s edge');
+  assert.ok(L.spawns.some((d) => d.species === 'fish' && inLake(d)), 'no fish in the lake');
+  assert.ok(!L.spawns.some((d) => d.sea && inLake(d)), 'a shark in the lake');
+});
+
+test('the hill, the summit and the volcano stand where the map says', () => {
+  assert.ok(world.heightAt(Z.HILL.x, Z.HILL.z) > 14);
+  assert.ok(world.heightAt(Z.PEAK.x, Z.PEAK.z) > 30);
+  // The volcano's rim is well above its crater floor.
+  const v = Z.VOLCANO;
+  const rim = world.heightAt(v.x + v.crater + 4, v.z), floor = world.heightAt(v.x, v.z);
+  assert.ok(rim - floor > 6 && floor > 5, 'rim ' + rim + ', crater floor ' + floor);
+});
+
+test('the boat can be landed anywhere round every island', () => {
+  const KEEL = -0.45, DRY = 0.4, REACH = 12; // as in src/main.js
+  for (const I of Z.ISLANDS) {
+    for (let n = 0; n < 48; n++) {
+      // Row in from the open sea until the keel touches...
+      const a = (n / 48) * Math.PI * 2;
+      let r = I.r + 95;
+      while (r > 0 && world.heightAt(I.x + Math.cos(a) * r, I.z + Math.sin(a) * r) < KEEL) r -= 0.25;
+      r += 0.25;
+      const bx = I.x + Math.cos(a) * r, bz = I.z + Math.sin(a) * r;
+      // ...and look for dry land within reach.
+      let found = false;
+      for (let reach = 2; reach <= REACH && !found; reach++) {
+        for (let k = 0; k < 16; k++) if (world.heightAt(bx + Math.cos(k * 0.3927) * reach, bz + Math.sin(k * 0.3927) * reach) > DRY) found = true;
+      }
+      assert.ok(found, 'no landing on ' + I.name + ' at bearing ' + n);
+    }
+  }
+});
+
+test('the open sea is deep: nothing for the boat to run aground on', () => {
+  const rng = Z.mulberry32(77);
+  for (let n = 0; n < 20000; n++) {
+    const x = (rng() * 2 - 1) * 1000, z = (rng() * 2 - 1) * 1000;
+    if (Z.nearestIsland(x, z).edge > 50) assert.ok(world.heightAt(x, z) < -1.5, 'a shoal at ' + x.toFixed(0) + ', ' + z.toFixed(0));
+  }
 });
 
 test('the house: two floors, a door, a chimney, and stairs that can be walked up', () => {

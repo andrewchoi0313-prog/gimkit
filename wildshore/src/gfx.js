@@ -21,6 +21,66 @@
     return m;
   }
 
+  // A smooth-shaded material: light blends across the surface, so spheres
+  // and cylinders look round instead of faceted.
+  function soft(color, extra) {
+    return new THREE.MeshLambertMaterial(Object.assign({ color }, extra || {}));
+  }
+
+  // A smooth ball. detail 3 is 320 faces, 2 is 180, 1 is 80 and 0 is 20.
+  function ball(radius, detail) {
+    const g = new THREE.IcosahedronGeometry(radius, detail === undefined ? 2 : detail);
+    if (detail === 0) {
+      // three.js gives the 20-face ball flat sides. Point each corner's
+      // normal straight out instead, so even this one shades round.
+      const p = g.attributes.position, n = g.attributes.normal;
+      for (let i = 0; i < p.count; i++) n.setXYZ(i, p.getX(i) / radius, p.getY(i) / radius, p.getZ(i) / radius);
+    }
+    return g;
+  }
+
+  // Paints a geometry with a blend from `low` at the bottom to `high` at the
+  // top. Each is a brightness (1 = unchanged) or a [r, g, b] tint. The paint
+  // multiplies whatever colour the material or instance has.
+  function shadeByHeight(geometry, low, high) {
+    const pos = geometry.attributes.position;
+    let y0 = Infinity, y1 = -Infinity;
+    for (let i = 0; i < pos.count; i++) {
+      y0 = Math.min(y0, pos.getY(i));
+      y1 = Math.max(y1, pos.getY(i));
+    }
+    const a = Array.isArray(low) ? low : [low, low, low], b = Array.isArray(high) ? high : [high, high, high];
+    const colors = new Float32Array(pos.count * 3);
+    for (let i = 0; i < pos.count; i++) {
+      const t = y1 > y0 ? (pos.getY(i) - y0) / (y1 - y0) : 0;
+      for (let k = 0; k < 3; k++) colors[i * 3 + k] = a[k] + (b[k] - a[k]) * t;
+    }
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    return geometry;
+  }
+
+  // Joins geometries into one, keeping their smooth normals and any paint.
+  function mergeSmooth(parts) {
+    const list = parts.map((g) => (g.index ? g.toNonIndexed() : g));
+    const painted = list.every((g) => g.attributes.color);
+    let total = 0;
+    for (const g of list) total += g.attributes.position.count;
+    const positions = new Float32Array(total * 3), normals = new Float32Array(total * 3);
+    const colors = painted ? new Float32Array(total * 3) : null;
+    let offset = 0;
+    for (const g of list) {
+      positions.set(g.attributes.position.array, offset);
+      normals.set(g.attributes.normal.array, offset);
+      if (painted) colors.set(g.attributes.color.array, offset);
+      offset += g.attributes.position.array.length;
+    }
+    const out = new THREE.BufferGeometry();
+    out.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    out.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
+    if (painted) out.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    return out;
+  }
+
   // Joins geometries into one flat-shaded geometry.
   function merge(parts) {
     const list = parts.map((g) => (g.index ? g.toNonIndexed() : g));
@@ -198,5 +258,5 @@
     return texture;
   }
 
-  WS.Gfx = { lambert, basic, add, merge, glyphTexture, glowTexture, paintBlock, blockTexture };
+  WS.Gfx = { lambert, soft, basic, add, ball, merge, mergeSmooth, shadeByHeight, glyphTexture, glowTexture, paintBlock, blockTexture };
 })();
