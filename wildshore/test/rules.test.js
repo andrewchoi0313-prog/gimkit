@@ -26,6 +26,23 @@ test('meat is only eaten when hurt, and wins back two hearts', () => {
   assert.equal(s.meat, 0);
 });
 
+test('breath lasts ten seconds under water, comes back above, and the mask never runs out', () => {
+  const s = R.createState();
+  assert.equal(R.AIR, 10);
+  for (let t = 0; t < 9; t++) assert.equal(R.breathe(s, 1, true), false);
+  assert.equal(R.breathe(s, 1, true), true);       // the tenth second: out of air
+  assert.equal(s.air, 0);
+  assert.equal(R.breathe(s, 1, false), false);
+  assert.equal(s.air, 4);                          // back above: breath returns fast
+  R.breathe(s, 5, false);
+  assert.equal(s.air, R.AIR);
+  s.mask = true;
+  for (let t = 0; t < 60; t++) assert.equal(R.breathe(s, 1, true), false);
+  assert.equal(s.air, R.AIR);
+  assert.equal(R.restore(R.serialize(s)).mask, true);
+  assert.equal(JSON.parse(R.serialize(s)).air, undefined);
+});
+
 test('hearts fall to zero, revive refills them, and rest brings them back slowly', () => {
   const s = R.createState();
   R.hurt(s, 2);

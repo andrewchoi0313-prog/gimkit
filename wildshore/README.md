@@ -11,6 +11,7 @@ Open `index.html` in a browser. No install or build step is needed. Progress is 
 | Move, or row the boat | `W` `A` `S` `D` (`↑` `↓` also work) | Left thumb stick |
 | Look around | Drag the mouse, or `←` `→` | Drag on the scene |
 | Jump / run (or row faster) | `Space` / hold `Shift` | **Jump** / drag the stick well past its edge |
+| Swim up / dive | Hold `Space` / hold `Shift` | Hold **Jump** / hold **Swing** |
 | Fight | `F`, `J` or a click | **Swing** (or **Shoot**) |
 | Pick a weapon | `1`–`4`, or `Q` for the next one | Tap it in the bar |
 | Eat a piece of meat | `R` | **Eat** |
@@ -35,7 +36,15 @@ Each of the six far islands hides a chest at its heart, marked in gold on the ma
 
 **The house** has two floors joined by stairs, a fireplace, a table with a note, a bookshelf, and a bed upstairs. Monsters cannot get through its walls. Sleeping in the bed at night skips to morning and refills your hearts.
 
-**The boat** is tied up at the dock south of the front door. Press `E` to board, row with the movement keys, and press `E` again close to land to step ashore. The sea is too deep to wade. If you are knocked out you wake at home, and the boat is back at the dock.
+**The boat** is tied up at the dock south of the front door. Press `E` to board, row with the movement keys, and press `E` again close to land to step ashore. If you are knocked out you wake at home, and the boat is back at the dock.
+
+## Swimming
+
+Walk into deep water and you float with your head above the surface. Hold `Shift` to dive and `Space` to come back up; let go and you drift up by yourself. Under water there are reefs of coral and weed round every island, with bright fish swimming over them.
+
+You can hold your breath for ten seconds. After that you lose a heart every two seconds until you surface. The **snorkel mask** on the table in the house (press `E` beside it) lets you stay under for as long as you like.
+
+Sharks patrol the deep water away from the shores, by day and by night. They chase swimmers and bite, but they will not follow into the shallows and they ignore the boat.
 
 ## Animals and monsters
 
@@ -54,8 +63,8 @@ npm test   # from the repository root: runs the tests with Node's built-in test 
 | File | What it does |
 | --- | --- |
 | `index.html`, `style.css` | Page layout, the screens and the on-screen display |
-| `src/zones.js` | The islands: height map, biomes, plants, monster dens, animals, the dock and chests (no DOM) |
-| `src/rules.js` | Hearts, meat, weapons and drops, islands and chests, the clock, saving (no DOM) |
+| `src/zones.js` | The islands: height map, biomes, plants, monster dens, animals, reefs, sharks, the dock and chests (no DOM) |
+| `src/rules.js` | Hearts, meat, breath and the mask, weapons and drops, islands and chests, the clock, saving (no DOM) |
 | `src/house.js` | The plan of the house: blocks, stairs and where the furniture stands (no DOM) |
 | `src/blocks.js`, `src/physics.js` | The block grid the house is made of, and collisions (no DOM) |
 | `src/world.js` | Builds the 3D scenery: sky, ground, sea, plants, the dock, furniture and chests |

@@ -18,7 +18,9 @@
   const ROW_FAST = 23;
   const KEEL = -0.45;      // the boat needs water at least this deep
   const DRY = 0.4;         // land creatures will not walk lower than this
-  const SAFE = 0.35;       // standing above this is a safe place to return to
+  const SAFE = 0.35;       // standing above this counts as dry land
+  const FLOAT = -1.25;     // feet this deep: the player floats with their head out of the water
+  const HEAD_UNDER = -1.6; // feet below this: the head is under water
 
   const canvas = document.getElementById('scene');
   const startBtn = document.getElementById('start-btn');
@@ -78,11 +80,11 @@
     x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0,
     heading: Math.PI, onGround: true, coyote: 0, jumpBuffer: 0,
     swing: -1, swingLen: 0.3, swingHit: false, swingRest: 0, invuln: 0,
-    safeX: 0, safeY: 0, safeZ: 0, safeClock: 0,
+    safeX: 0, safeY: 0, safeZ: 0, safeClock: 0, swimming: false,
   };
   const boat = { x: data.layout.boat.x, z: data.layout.boat.z, heading: Math.PI, vx: 0, vz: 0, riding: false, stroke: 0 };
   // Shared with the creatures.
-  const G = { state: Rules.createState(), player, particles, time: 0, zone: rt, mode: 'title', hurtPlayer, dropLoot, onKill };
+  const G = { state: Rules.createState(), player, boat, particles, time: 0, zone: rt, mode: 'title', hurtPlayer, dropLoot, onKill };
   const monsters = WS.Monsters.create(G);
   monsters.populate(rt);
 
@@ -97,11 +99,19 @@
   let fade = null;         // { t, action }
   let lastMood = -1;
   let tips = { monster: false, weapon: false, meat: false };
+  let chokeClock = 0;      // time until the next heart is lost for want of air
+  let swimTilt = 0;        // 0 standing, 1 stretched out swimming
+  let underView = false;   // is the camera under water?
 
   // ---------- the explorer and the boat ----------
 
   const hero = Actors.makeFigure({ coat: 0x2f6fb0, legs: 0x4a3f33, hat: 'cap', hatColor: 0xf2c23a, scarf: 0xd9432f, pack: 0x8a5f3c, lantern: true });
+  hero.group.rotation.order = 'YXZ'; // turn first, then tip forward to swim
   scene.add(hero.group);
+  const heroMask = Actors.makeMask();
+  heroMask.position.set(0, 0.32, 0.27);
+  heroMask.visible = false;
+  hero.head.add(heroMask);
   const held = {};
   for (const id of Rules.WEAPON_ORDER) {
     held[id] = Actors.makeWeapon(id);
@@ -160,6 +170,7 @@
     lines: [
       'Welcome home. The fire is lit and the bed is upstairs.',
       input.touch ? 'Sheep, cows, pigs, deer, chickens and fish live wild out here. Hunt one for meat, then tap Eat when you are hurt.' : 'Sheep, cows, pigs, deer, chickens and fish live wild out here. Hunt one for meat, then press R to eat when you are hurt.',
+      'You can swim: Space swims up and ' + (input.touch ? 'holding Swing' : 'Shift') + ' dives. There is coral down there. You can hold your breath for ten seconds, and there are sharks in the deep water. The snorkel mask on this table lets you stay under as long as you like.',
       'Nothing dangerous walks by day. At night the monsters come out, and they are gone again by morning. Sleep in the bed to skip the dark, or fight: they drop weapons.',
       'The boat is tied up at the dock, south of the door. Six more islands lie across the water, and each one hides a treasure chest.',
     ],
@@ -169,6 +180,14 @@
       dirty = true;
     }
   }));
+  spot(plan.mask, 2.2, () => (G.state.mask ? null : 'Take the snorkel mask'), () => {
+    G.state.mask = true;
+    view.mask.visible = false;
+    heroMask.visible = true;
+    Sound.weapon();
+    UI.toast('A snorkel mask! Now you can stay under water as long as you like.', 4200);
+    save();
+  });
   spot(plan.bed, 2.6, () => 'Sleep in the bed', () => {
     if (!Rules.isNight(G.state.clock)) {
       UI.toast('You are not sleepy. The bed is for skipping the night.', 3000);
@@ -300,6 +319,8 @@
       chest.target = opened ? -1.9 : 0;
       chest.halo.visible = !opened;
     }
+    view.mask.visible = !G.state.mask;
+    heroMask.visible = G.state.mask;
     moorBoat();
     if (saved && saved.boat) {
       const [bx, bz, bh, riding] = saved.boat;
@@ -506,10 +527,94 @@
     return { mx: fx * input.moveY + rx * input.moveX, mz: fz * input.moveY + rz * input.moveX };
   }
 
+  function updateSwing(dt, push) {
+    player.swingRest -= dt;
+    const clicked = input.tap && input.tap.mouse && !input.tap.alt;
+    if ((input.swing || clicked || input.swingHeld) && player.swing < 0 && player.swingRest <= 0) {
+      const W = WEAPONS[G.state.weapon];
+      player.swing = 0;
+      player.swingLen = W.ranged ? 0.25 : W.time;
+      player.swingHit = W.ranged;
+      player.swingRest = W.time + 0.06;
+      if (W.ranged) {
+        fire(W);
+      } else {
+        Sound[G.state.weapon === 'axe' ? 'chop' : 'swing']();
+        if (push < 0.1) {
+          const aim = monsters.nearest(5, -1, false); // standing still: turn to face whatever is closest
+          if (aim) player.heading = Math.atan2(aim.x - player.x, aim.z - player.z);
+        }
+      }
+    }
+    if (player.swing >= 0) {
+      player.swing += dt;
+      if (!player.swingHit && player.swing > player.swingLen * 0.3) {
+        player.swingHit = true;
+        strike();
+      }
+      if (player.swing >= player.swingLen) player.swing = -1;
+    }
+  }
+
+  // In deep water the player floats at the surface, dives and comes back up.
+  function swim(dt, mx, mz, push) {
+    const space = rt.space;
+    const grip = Math.min(1, 4 * dt);
+    player.vx += (mx * 5 - player.vx) * grip;
+    player.vz += (mz * 5 - player.vz) * grip;
+    if (push > 0.1) player.heading = turnToward(player.heading, Math.atan2(mx, mz), 8 * dt);
+    const edge = def.size / 2 - 6;
+    const next = { x: player.x + player.vx * dt, z: player.z + player.vz * dt };
+    Physics.pushOut(space, next, player.y, RADIUS, HEIGHT);
+    next.x = clamp(next.x, -edge, edge);
+    next.z = clamp(next.z, -edge, edge);
+    // Jump swims up, Shift (or holding Swing on a touch screen) dives, and
+    // doing neither drifts back to the surface.
+    const dive = input.run || (input.touch && input.swingHeld);
+    const rise = input.jumpHeld ? 3.6 : dive ? -4 : 1.4;
+    const bed = Physics.groundAt(space, next.x, next.z, player.y + 0.4);
+    player.x = next.x;
+    player.z = next.z;
+    player.y = Math.max(bed, Math.min(FLOAT, player.y + rise * dt));
+    player.vy = 0;
+    player.onGround = true;
+    if (!input.touch) updateSwing(dt, push);
+    if (player.invuln > 0) player.invuln -= dt;
+  }
+
+  // Counts breath while the head is under water.
+  function breathe(dt) {
+    const s = G.state;
+    const out = Rules.breathe(s, dt, !boat.riding && player.swimming && player.y < HEAD_UNDER);
+    UI.setAir(s.air < Rules.AIR - 0.05 ? s.air / Rules.AIR : null);
+    if (!out) {
+      chokeClock = 0;
+      return;
+    }
+    chokeClock -= dt;
+    if (chokeClock > 0) return;
+    chokeClock = 2;
+    Sound.hurt();
+    UI.toast('Out of air! Swim up with ' + (input.touch ? 'Jump' : 'Space') + '.', 2200);
+    const result = Rules.hurt(s, 1);
+    refreshHud();
+    if (result.down) knockedOut();
+  }
+
   function updatePlayer(dt) {
     const space = rt.space;
     const { mx, mz } = steer(dt);
     const push = Math.min(1, Math.hypot(mx, mz));
+    const wasSwimming = player.swimming;
+    player.swimming = heightAt(player.x, player.z) < FLOAT && player.y <= FLOAT + 0.12;
+    if (player.swimming) {
+      if (!wasSwimming) {
+        Sound.splash();
+        particles.burst(player.x, 0.2, player.z, 0xdff6ff, 10, 4, 0.6);
+      }
+      swim(dt, mx, mz, push);
+      return;
+    }
 
     const wading = player.onGround && player.y < -0.25;
     const top = (input.run ? RUN : WALK) * (wading ? 0.55 : 1);
@@ -561,7 +666,7 @@
     player.y = y;
     player.z = next.z;
 
-    // Remember the last safe spot, and go back to it after wading too deep.
+    // Remember the last dry spot: that is where a saved game starts again.
     player.safeClock -= dt;
     if (player.onGround && player.y > SAFE && player.safeClock <= 0) {
       player.safeX = player.x;
@@ -569,43 +674,7 @@
       player.safeZ = player.z;
       player.safeClock = 0.3;
     }
-    if (player.y < def.hazard.level) {
-      Sound.splash();
-      particles.burst(player.x, 0.2, player.z, 0xdff6ff, 14, 5, 0.7);
-      fadeThrough(() => {
-        placePlayer(player.safeX, player.safeZ, undefined, player.safeY);
-        UI.toast(def.hazard.text, 2800);
-      });
-      return;
-    }
-
-    // Swinging, chopping or shooting.
-    player.swingRest -= dt;
-    const clicked = input.tap && input.tap.mouse && !input.tap.alt;
-    if ((input.swing || clicked || input.swingHeld) && player.swing < 0 && player.swingRest <= 0) {
-      const W = WEAPONS[G.state.weapon];
-      player.swing = 0;
-      player.swingLen = W.ranged ? 0.25 : W.time;
-      player.swingHit = W.ranged;
-      player.swingRest = W.time + 0.06;
-      if (W.ranged) {
-        fire(W);
-      } else {
-        Sound[G.state.weapon === 'axe' ? 'chop' : 'swing']();
-        if (push < 0.1) {
-          const aim = monsters.nearest(5, -1, false); // standing still: turn to face whatever is closest
-          if (aim) player.heading = Math.atan2(aim.x - player.x, aim.z - player.z);
-        }
-      }
-    }
-    if (player.swing >= 0) {
-      player.swing += dt;
-      if (!player.swingHit && player.swing > player.swingLen * 0.3) {
-        player.swingHit = true;
-        strike();
-      }
-      if (player.swing >= player.swingLen) player.swing = -1;
-    }
+    updateSwing(dt, push);
     if (player.invuln > 0) player.invuln -= dt;
   }
 
@@ -679,8 +748,11 @@
     const row = boat.riding ? Math.sin(boat.stroke) * 0.5 : 0;
     boatModel.oars[0].rotation.y = row;
     boatModel.oars[1].rotation.y = -row;
-    hero.group.position.set(player.x, player.y + (boat.riding ? boatModel.group.position.y : 0), player.z);
+    // Swimming, the body lies flat just under the surface.
+    swimTilt += ((player.swimming && !boat.riding ? 1 : 0) - swimTilt) * Math.min(1, dt * 8);
+    hero.group.position.set(player.x, player.y + (boat.riding ? boatModel.group.position.y : 0) + swimTilt * 0.95, player.z);
     hero.group.rotation.y = player.heading;
+    hero.group.rotation.x = swimTilt * 1.15;
     hero.group.visible = player.invuln <= 0 || Math.floor(G.time * 16) % 2 === 0;
     Actors.animateFigure(hero, dt, {
       speed: G.mode === 'play' && !boat.riding ? Math.hypot(player.vx, player.vz) / WALK : 0,
@@ -790,8 +862,12 @@
     cam.now = want < cam.now ? want : cam.now + (want - cam.now) * (1 - Math.exp(-5 * dt));
     const x = cam.x + camDir.x * cam.now, z = cam.z + camDir.z * cam.now;
     let y = cam.y + camDir.y * cam.now;
-    const floor = Math.max(heightAt(x, z), 0) + 0.9; // never under the ground or the sea
+    // Never under the ground. Under the sea only when the player's head is,
+    // and then the camera stays down there with them.
+    const diving = player.swimming && !boat.riding && player.y < HEAD_UNDER;
+    const floor = diving ? heightAt(x, z) + 0.6 : Math.max(heightAt(x, z), 0) + 0.9;
     if (y < floor && !plan.inside(cam.x, cam.z)) y = floor;
+    if (diving && y > -0.3) y = -0.3;
     camera.position.set(x, y, z);
     camera.lookAt(cam.x, cam.y, cam.z);
   }
@@ -831,6 +907,7 @@
     }
 
     if (boat.riding) {
+      player.swimming = false;
       updateBoat(dt);
     } else {
       updatePlayer(dt);
@@ -844,6 +921,8 @@
         UI.toast(input.touch ? 'A monster! Tap Swing to fight it.' : 'A monster! Press F or click to swing.', 4200);
       }
     }
+
+    breathe(dt);
 
     // Which island is this? Stepping onto a new one is worth a cheer.
     islandClock -= dt;
@@ -952,6 +1031,18 @@
     if (G.mode === 'play') {
       saveClock += dt;
       if ((dirty && saveClock > 2) || saveClock > 15) save();
+    }
+    // Under the surface everything fades into blue-green murk.
+    const below = camera.position.y < -0.05 && G.mode !== 'title';
+    if (below) {
+      scene.fog.color.copy(sky.murk);
+      scene.fog.near = 1;
+      scene.fog.far = 46;
+    }
+    if (below !== underView) {
+      underView = below;
+      sky.setUnder(below);
+      if (!below) sky.setMood(Rules.moodAt(G.state.clock));
     }
     renderer.render(scene, camera);
     tuneQuality(rawDt);

@@ -265,7 +265,8 @@
 
   function makeMonster(sp, color) {
     if (sp.body === 'animal') return makeAnimal(sp);
-    if (sp.body === 'fish') return makeFish(sp);
+    if (sp.body === 'fish') return makeFish(sp, color);
+    if (sp.body === 'shark') return makeShark(sp);
     if (sp.body === 'brute') return makeBrute(sp, color);
     if (sp.body === 'wisp') return makeWisp(sp, color);
     return makeBlob(sp, color);
@@ -327,14 +328,15 @@
   }
 
   // A fish, modelled around its middle so it can swim just under the surface.
-  function makeFish(sp) {
+  function makeFish(sp, color) {
+    const tint = color || sp.color;
     const group = new THREE.Group();
     const inner = new THREE.Group();
     group.add(inner);
-    const rest = shade(sp.color, 0.25);
-    const mat = lambert(sp.color, { emissive: rest });
+    const rest = shade(tint, 0.35);
+    const mat = lambert(tint, { emissive: rest });
     add(inner, box(0.2, 0.34, 0.7), mat, 0, 0, 0);
-    add(inner, box(0.06, 0.4, 0.3), lambert(shade(sp.color, 0.7)), 0, 0, -0.5).rotation.x = 0.78;
+    add(inner, box(0.06, 0.4, 0.3), lambert(shade(tint, 0.7)), 0, 0, -0.5).rotation.x = 0.78;
     add(inner, box(0.22, 0.08, 0.08), basic(0x1c1c22), 0, 0.06, 0.26, false);
     return { group, inner, mat, rest, legs: [], radius: 0.55, height: 0.5 };
   }
@@ -350,6 +352,35 @@
     const group = new THREE.Group();
     add(group, geometry, lambert(0xf0605d, { emissive: 0x6a1414 }), 0, 0, 0);
     return group;
+  }
+
+  // A shark, modelled around its middle like the fish.
+  function makeShark(sp) {
+    const group = new THREE.Group();
+    const inner = new THREE.Group();
+    group.add(inner);
+    const rest = shade(sp.color, 0.2);
+    const mat = lambert(sp.color, { emissive: rest });
+    add(inner, box(0.75, 0.7, 2.4), mat, 0, 0, 0);
+    add(inner, box(0.55, 0.5, 0.8), mat, 0, -0.02, 1.5);
+    add(inner, box(0.6, 0.2, 2.2), lambert(0xeef2f4), 0, -0.3, 0.1, false);
+    add(inner, new THREE.ConeGeometry(0.36, 0.8, 4), mat, 0, 0.7, 0).scale.set(0.22, 1, 1);
+    add(inner, box(0.4, 0.4, 0.9), mat, 0, 0, -1.5);
+    add(inner, box(0.08, 1.1, 0.5), mat, 0, 0.1, -2.05).rotation.x = 0.3;
+    for (const side of [-1, 1]) {
+      add(inner, box(0.7, 0.07, 0.45), mat, side * 0.6, -0.2, 0.5).rotation.z = side * -0.4;
+      add(inner, box(0.05, 0.1, 0.1), basic(0x101014), side * 0.29, 0.08, 1.7, false);
+    }
+    return { group, inner, mat, rest, legs: [], radius: 0.95, height: 0.8 };
+  }
+
+  // A snorkel mask: a glass face-plate with a tube.
+  function makeMask() {
+    const g = new THREE.Group();
+    add(g, box(0.5, 0.2, 0.08), basic(0x8fe9ff), 0, 0, 0, false);
+    add(g, box(0.56, 0.26, 0.05), lambert(0x1f3f46), 0, 0, -0.03, false);
+    add(g, box(0.06, 0.5, 0.06), lambert(0xff8a3c), 0.3, 0.2, -0.05, false);
+    return g;
   }
 
   // A drumstick: what a hunted animal leaves behind.
@@ -458,6 +489,6 @@
 
   WS.Actors = {
     shade, glowSprite, makeFigure, animateFigure, makeMarker, makeWeapon, makeWeaponPickup, makeBolt,
-    makeMonster, makeHeart, makeMeat, makeBoat, makeChest, makeParticles,
+    makeMonster, makeHeart, makeMeat, makeMask, makeBoat, makeChest, makeParticles,
   };
 })();

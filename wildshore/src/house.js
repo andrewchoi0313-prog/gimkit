@@ -63,6 +63,7 @@
       start: { x: hx - 1.5, z: hz + 0.5, heading: -Math.PI / 2 },   // on the rug, facing the fire
       fire: { x: x0 + 1.5, y: g, z: hz + 0.5 },                    // the firebox
       table: { x: hx + 2.5, y: g, z: hz + 1.5 },
+      mask: { x: hx + 2.7, y: g, z: hz + 0.8 },                     // the snorkel mask, on the table
       shelf: { x: x1 - 0.75, y: g, z: hz + 2.5 },
       bed: { x: x1 - 1.7, y: upper, z: z1 - 2.2 },
       wardrobe: { x: hx - 2.5, y: upper, z: z1 - 0.85 },

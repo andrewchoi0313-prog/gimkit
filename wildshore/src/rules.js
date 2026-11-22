@@ -10,6 +10,7 @@
   const NIGHT_END = 0.95;
   const MAX_LEVEL = 3;
   const MEAT_HEALS = 2;
+  const AIR = 10;              // seconds of breath under water without the mask
 
   // damage is listed per level. arc is how far round the swing reaches:
   // 1 = only straight ahead, -1 = all the way round.
@@ -34,6 +35,8 @@
       islands: ['home'],   // ids of islands the player has set foot on
       chests: [],          // ids of islands whose chest has been opened
       readNote: false,
+      mask: false,         // the snorkel mask from the table: breathe under water for ever
+      air: AIR,            // seconds of breath left (not saved)
       kills: 0,            // monsters beaten
       hunts: 0,            // animals hunted
       deaths: 0,
@@ -64,6 +67,7 @@
     s.hearts = MAX_HEARTS;
     s.deaths += 1;
     s.sinceHurt = 99;
+    s.air = AIR;
   }
 
   // Out of danger for a while, hearts slowly come back. Returns true when one does.
@@ -75,6 +79,17 @@
     s.regen = 0;
     s.hearts += 1;
     return true;
+  }
+
+  // Uses up breath while the head is under water, and wins it back quickly
+  // above. Returns true when there is no air left. The mask never runs out.
+  function breathe(s, dt, under) {
+    if (!under || s.mask) {
+      s.air = Math.min(AIR, s.air + dt * 4);
+      return false;
+    }
+    s.air = Math.max(0, s.air - dt);
+    return s.air === 0;
   }
 
   function addMeat(s, amount) {
@@ -209,7 +224,7 @@
   // ---------- saving ----------
 
   function serialize(s) {
-    return JSON.stringify(Object.assign({}, s, { promised: undefined }));
+    return JSON.stringify(Object.assign({}, s, { promised: undefined, air: undefined }));
   }
 
   // Rebuilds a state from saved text. Returns null if the text is not a save.
@@ -232,6 +247,7 @@
     s.islands = known.filter((id) => id === 'home' || raw.islands.includes(id));
     s.chests = Object.keys(CHESTS).filter((id) => Array.isArray(raw.chests) && raw.chests.includes(id));
     s.readNote = !!raw.readNote;
+    s.mask = !!raw.mask;
     s.kills = Math.round(num(raw.kills, 0, 1e6, 0));
     s.hunts = Math.round(num(raw.hunts, 0, 1e6, 0));
     s.deaths = Math.round(num(raw.deaths, 0, 1e6, 0));
@@ -241,8 +257,8 @@
   }
 
   Object.assign(exports, {
-    MAX_HEARTS, DAY_LENGTH, NIGHT_START, NIGHT_END, MAX_LEVEL, MEAT_HEALS, WEAPONS, WEAPON_ORDER, CHESTS, ISLAND_COUNT,
-    createState, hurt, heal, revive, tickRegen, addMeat, eatMeat,
+    MAX_HEARTS, DAY_LENGTH, NIGHT_START, NIGHT_END, MAX_LEVEL, MEAT_HEALS, AIR, WEAPONS, WEAPON_ORDER, CHESTS, ISLAND_COUNT,
+    createState, hurt, heal, revive, tickRegen, breathe, addMeat, eatMeat,
     ownedWeapons, weaponDamage, selectWeapon, cycleWeapon, rollDrop, pickupWeapon,
     visitIsland, openChest, objective, isNight, advanceClock, sleep, moodAt, serialize, restore,
   });

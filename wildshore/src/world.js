@@ -129,7 +129,14 @@
       }
     }
 
-    return { sun, setPalette, setMood, update, waterColor };
+    // Under water the sky is swapped for blue-green murk.
+    const murk = new THREE.Color(0x1b7f95);
+    function setUnder(on) {
+      dome.visible = sunDisc.visible = stars.visible = !on;
+      scene.background = on ? murk : null;
+    }
+
+    return { sun, setPalette, setMood, setUnder, update, waterColor, murk };
   }
 
   // ---------- ground ----------
@@ -310,7 +317,8 @@
 
   function addSea(view, size) {
     const geo = new THREE.PlaneGeometry(size, size, 150, 150).rotateX(-Math.PI / 2);
-    const mesh = new THREE.Mesh(geo, lambert(0x2aa3b5, { transparent: true, opacity: 0.8 }));
+    // Two-sided, so a diver looking up sees the surface.
+    const mesh = new THREE.Mesh(geo, lambert(0x2aa3b5, { transparent: true, opacity: 0.8, side: THREE.DoubleSide }));
     mesh.receiveShadow = true;
     view.group.add(mesh);
     const pos = geo.attributes.position;
@@ -322,6 +330,37 @@
       pos.needsUpdate = true;
     });
     return mesh;
+  }
+
+  // ---------- the reef ----------
+
+  // Coral, sponges and weed on the seabed. All for show: nothing to bump into.
+  function buildReef(view) {
+    const corals = view.zone.layout.corals;
+    const glowing = () => lambert(WHITE, { emissive: 0x3a3a3a });
+    const branch = merge([
+      cyl(0.08, 0.15, 1.0, 5).translate(0, 0.5, 0),
+      cyl(0.05, 0.09, 0.75, 5).rotateZ(-0.7).translate(0.3, 0.8, 0),
+      cyl(0.05, 0.09, 0.65, 5).rotateZ(0.8).translate(-0.28, 0.65, 0.05),
+      cyl(0.04, 0.08, 0.55, 5).rotateX(0.8).translate(0, 0.95, 0.25),
+    ]);
+    const brain = new THREE.IcosahedronGeometry(0.55, 1).scale(1, 0.7, 1).translate(0, 0.3, 0);
+    const weed = merge([
+      new THREE.ConeGeometry(0.1, 1.9, 4).translate(0, 0.95, 0),
+      new THREE.ConeGeometry(0.08, 1.4, 4).rotateZ(0.25).translate(-0.25, 0.7, 0.1),
+      new THREE.ConeGeometry(0.08, 1.6, 4).rotateZ(-0.2).translate(0.22, 0.8, -0.1),
+    ]);
+    const bright = [0xff6f91, 0xff9a3c, 0xb388ff, 0xffd84a, 0x4fd6c8, 0xff5a5a].map((h) => new THREE.Color(h));
+    const green = [0x3fae6a, 0x2f8f6f, 0x6fcf7a].map((h) => new THREE.Color(h));
+    const set = (d, c, k, palette) => {
+      d.position.set(k.x, k.y - 0.05, k.z);
+      d.rotation.set(0, k.turn, 0);
+      d.scale.setScalar(k.scale);
+      c.copy(palette[k.tint % palette.length]);
+    };
+    instanced(view.group, branch, glowing(), corals.filter((k) => k.kind === 0), (d, c, k) => set(d, c, k, bright), false);
+    instanced(view.group, brain, glowing(), corals.filter((k) => k.kind === 1), (d, c, k) => set(d, c, k, bright), false);
+    instanced(view.group, weed, glowing(), corals.filter((k) => k.kind === 2), (d, c, k) => set(d, c, k, green), false);
   }
 
   // ---------- the dock ----------
@@ -377,6 +416,11 @@
     for (const [dx, dz] of [[0.6, 0.95], [-0.6, 0.95], [0.6, -0.95], [-0.6, -0.95]]) add(g, new THREE.BoxGeometry(0.12, 0.8, 0.12), woodDark, t.x + dx, t.y + 0.4, t.z + dz);
     add(g, new THREE.BoxGeometry(0.4, 0.02, 0.55), linen, t.x - 0.1, t.y + 0.93, t.z + 0.2, false).rotation.y = 0.3;
     solid(t.x - 0.75, t.x + 0.75, t.z - 1.1, t.z + 1.1, t.y + 0.9);
+    // The snorkel mask lies on the table until it is taken.
+    view.mask = WS.Actors.makeMask();
+    view.mask.position.set(plan.mask.x, t.y + 1.0, plan.mask.z);
+    view.mask.rotation.set(-1.2, 0.5, 0);
+    g.add(view.mask);
     for (const side of [-1, 1]) {
       const cx = t.x + side * 1.35;
       add(g, new THREE.BoxGeometry(0.6, 0.1, 0.6), wood, cx, t.y + 0.5, t.z);
@@ -422,6 +466,7 @@
     view.group.add(buildGround(zone));
     scatter(view.group, zone.layout, view.grid);
     view.sea = addSea(view, zone.def.size + 1400);
+    buildReef(view);
     buildDock(view);
     furnish(view, plan);
     for (const c of zone.layout.chests) {

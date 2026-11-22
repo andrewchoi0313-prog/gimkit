@@ -29,22 +29,31 @@ test('the land is about ten times the size of Riftstead', () => {
 
 test('every den is a night monster, a wild animal or a fish, in the right place', () => {
   const dens = L.spawns;
-  const monsters = dens.filter((d) => d.night), wild = dens.filter((d) => d.wild);
-  assert.equal(monsters.length + wild.length, dens.length);
+  const monsters = dens.filter((d) => d.night), wild = dens.filter((d) => d.wild), sharks = dens.filter((d) => d.sea);
+  assert.equal(monsters.length + wild.length + sharks.length, dens.length);
+  assert.ok(sharks.length >= 30, 'only ' + sharks.length + ' sharks');
   assert.ok(monsters.length >= 200, 'only ' + monsters.length + ' monsters');   // Riftstead had 84 dens in all
   assert.equal(new Set(dens.map((d) => d.id)).size, dens.length);
   for (const d of dens) {
     const sp = Z.SPECIES[d.species];
     assert.ok(sp, 'unknown species ' + d.species);
     const h = world.heightAt(d.x, d.z);
-    if (sp.body === 'fish') assert.ok(h < -0.5 && h > -2.5, 'a fish is out of the shallows');
+    if (sp.body === 'shark') assert.ok(h < -5 && Z.nearestIsland(d.x, d.z).edge > 40, 'a shark is in the shallows');
+    else if (sp.body === 'fish') assert.ok(h < -0.5 && (d.depth === undefined || (d.depth > h && d.depth < -1)), 'a fish is out of the water');
     else assert.ok(h > 1, d.species + ' starts in the water');
     assert.equal(!!d.wild, sp.body === 'animal' || sp.body === 'fish');
     if (d.wild) assert.ok(sp.meat >= 1);
-    else assert.ok(Z.dist(d.x, d.z, Z.HOUSE.x, Z.HOUSE.z) >= 55, 'a monster den is too close to the house');
+    else if (!d.sea) assert.ok(Z.dist(d.x, d.z, Z.HOUSE.x, Z.HOUSE.z) >= 55, 'a monster den is too close to the house');
   }
   const kinds = new Set(wild.map((d) => d.species));
   for (const need of ['sheep', 'cow', 'chicken', 'pig', 'deer', 'fish']) assert.ok(kinds.has(need), 'no ' + need);
+});
+
+test('coral grows under water round the islands', () => {
+  assert.ok(L.corals.length >= 1000, 'only ' + L.corals.length + ' corals');
+  for (const c of L.corals) assert.ok(c.y < -1.5, 'coral is poking out of the sea');
+  assert.equal(new Set(L.corals.map((c) => c.kind)).size, 3);
+  assert.ok(L.spawns.filter((d) => d.depth !== undefined).length >= 100, 'too few reef fish');
 });
 
 test('the dock runs from the beach out to water deep enough for the boat', () => {

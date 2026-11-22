@@ -32,7 +32,9 @@
       rt.monsters = rt.data.layout.spawns.map((den) => record(den));
     }
 
-    const flies = (m) => m.sp.body === 'wisp' || m.sp.body === 'fish'; // not standing on the ground
+    const swims = (m) => m.sp.body === 'fish' || m.sp.body === 'shark';
+    const flies = (m) => m.sp.body === 'wisp' || swims(m); // not standing on the ground
+    const always = (m) => !!(m.den.wild || m.den.sea);      // about by day as well as night
     const SWIM = -0.45; // fish keep just under the surface
     const centreY = (m) => (flies(m) ? m.y : m.y + m.actor.height / 2);
     const floorAt = (rt, x, z, feetY) => Physics.groundAt(rt.space, x, z, feetY);
@@ -47,7 +49,7 @@
       m.hp = m.sp.hp;
       m.x = x;
       m.z = z;
-      m.y = m.sp.body === 'fish' ? SWIM : floorAt(rt, x, z, 1e4) + (flies(m) ? 2.6 : 0);
+      m.y = m.sp.body === 'shark' ? -2.6 : m.sp.body === 'fish' ? (m.den.depth === undefined ? SWIM : m.den.depth) : floorAt(rt, x, z, 1e4) + (flies(m) ? 2.6 : 0);
       m.scared = 0;
       m.hop = null;
       m.hurt = 0;
@@ -285,7 +287,8 @@
     }
 
     function updateFish(rt, m, dt) {
-      const wet = (x, z) => { const h = rt.space.heightAt(x, z); return h < -0.55 && h > -3.5; };
+      const deep = m.den.depth !== undefined; // a reef fish, down among the coral
+      const wet = (x, z) => { const h = rt.space.heightAt(x, z); return h < -0.55 && (deep || h > -3.5); };
       m.wait -= dt;
       if (m.scared > 0) m.scared -= dt;
       if (m.wait <= 0 || !wet(m.goalX, m.goalZ)) {
@@ -307,8 +310,37 @@
           m.face = Math.atan2(m.goalX - m.x, m.goalZ - m.z);
         }
       }
-      m.y = SWIM + Math.sin(G.time * 2 + m.phase) * 0.06;
+      m.y = Math.max(deep ? m.den.depth : SWIM, rt.space.heightAt(m.x, m.z) + 0.5) + Math.sin(G.time * 2 + m.phase) * 0.06;
       m.actor.inner.rotation.y = Math.sin(G.time * 8 + m.phase) * 0.25; // a wiggle
+      m.actor.group.position.set(m.x, m.y, m.z);
+    }
+
+    // Sharks patrol the deep and go for anyone swimming there.
+    function updateShark(rt, m, dt, d) {
+      const p = G.player;
+      const deepAt = (x, z) => rt.space.heightAt(x, z) < -3.2;
+      const swimmer = G.mode === 'play' && !G.boat.riding && p.swimming;
+      m.cool -= dt;
+      const hunting = swimmer && d < 26 && m.cool <= 0;
+      const gx = hunting ? p.x : m.den.x + Math.cos(G.time * 0.25 + m.phase) * 9;
+      const gz = hunting ? p.z : m.den.z + Math.sin(G.time * 0.25 + m.phase) * 9;
+      const gd = dist(m.x, m.z, gx, gz);
+      if (gd > 0.3) {
+        const v = (hunting ? 6.4 : 2.2) * dt;
+        const nx = m.x + ((gx - m.x) / gd) * v, nz = m.z + ((gz - m.z) / gd) * v;
+        if (deepAt(nx, nz)) {
+          m.x = nx;
+          m.z = nz;
+        }
+        m.face = Math.atan2(gx - m.x, gz - m.z);
+      }
+      const want = hunting ? Math.min(-0.9, p.y + 0.5) : -2.6;
+      m.y += (Math.max(want, rt.space.heightAt(m.x, m.z) + 0.7) - m.y) * Math.min(1, dt * 2);
+      if (swimmer && p.invuln <= 0 && Math.hypot(p.x - m.x, p.y + 0.8 - m.y, p.z - m.z) < 1.8) {
+        G.hurtPlayer(m.sp.dmg, m.x, m.z);
+        m.cool = 2.4; // circles away before the next pass
+      }
+      m.actor.inner.rotation.y = Math.sin(G.time * 5 + m.phase) * 0.14;
       m.actor.group.position.set(m.x, m.y, m.z);
     }
 
@@ -320,7 +352,7 @@
       m.deadUntil = G.time + (m.den.wild ? 150 : 75) + Math.random() * 45;
       Sound.pop();
       G.particles.burst(m.x, centreY(m), m.z, m.sp.color, 16, 5, 0.8, 9, m.sp.scale);
-      if (m.den.wild) {
+      if (m.sp.meat) {
         // Animals leave meat. A fish's floats at the surface.
         for (let i = 0; i < m.sp.meat; i++) G.dropLoot(m.x, Math.max(centreY(m), 0.4), m.z, 'meat');
       } else {
@@ -357,15 +389,15 @@
             m.dying -= dt;
             m.actor.group.scale.setScalar(Math.max(0.001, m.dying / 0.3));
             if (m.dying <= 0) m.actor.group.visible = false;
-          } else if (G.time >= m.deadUntil && (m.den.wild || night)) {
+          } else if (G.time >= m.deadUntil && (always(m) || night)) {
             // Animals are simply there; monsters step out of the dark, never right beside the player.
             const away = dist(m.den.x, m.den.z, p.x, p.z);
-            if (away < (m.den.wild ? 100 : 85) && (m.den.wild || away > 24)) appear(rt, m, m.den.x, m.den.z);
+            if (away < (always(m) ? 100 : 85) && (always(m) || away > 24)) appear(rt, m, m.den.x, m.den.z);
           }
           continue;
         }
         const d = dist(m.x, m.z, p.x, p.z);
-        if (!m.den.wild && !night) {
+        if (!always(m) && !night) {
           vanish(m, d < 60); // monsters fade at sunrise
           continue;
         }
@@ -379,7 +411,7 @@
           const spot = { x: m.x + m.kx * dt, z: m.z + m.kz * dt };
           Physics.pushOut(rt.space, spot, flies(m) ? m.y - 0.55 : m.y, m.actor.radius, 1.1);
           const water = rt.space.heightAt(spot.x, spot.z);
-          if (m.sp.body === 'fish' ? water < -0.55 : flies(m) || floorAt(rt, spot.x, spot.z, m.y) >= rt.dryLevel) {
+          if (swims(m) ? water < (m.sp.body === 'shark' ? -3.2 : -0.55) : flies(m) || floorAt(rt, spot.x, spot.z, m.y) >= rt.dryLevel) {
             m.x = spot.x;
             m.z = spot.z;
           }
@@ -391,6 +423,7 @@
           if (m.hurt <= 0) m.wait = 0.2;
         } else if (m.sp.body === 'animal') updateAnimal(rt, m, dt, d);
         else if (m.sp.body === 'fish') updateFish(rt, m, dt);
+        else if (m.sp.body === 'shark') updateShark(rt, m, dt, d);
         else if (m.sp.body === 'brute') updateBrute(rt, m, dt, d);
         else if (m.sp.body === 'wisp') updateWisp(rt, m, dt, d);
         else updateBlob(rt, m, dt, d);

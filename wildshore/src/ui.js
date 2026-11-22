@@ -19,7 +19,7 @@
     hud: $('hud'), hearts: $('hearts'), meat: $('meat-count'), zone: $('zone-name'), clock: $('clock'),
     objective: $('objective'), toast: $('toast'), prompt: $('prompt'), promptText: $('prompt-text'),
     talk: $('talk'), talkName: $('talk-name'), talkText: $('talk-text'), touch: $('touch'), useBtn: $('btn-use'),
-    fade: $('fade'), note: $('title-note'), mute: $('mute-btn'), slots: $('slots'), swingBtn: $('btn-swing'), eatBtn: $('eat-btn'),
+    air: $('air'), airFill: $('air-fill'), fade: $('fade'), note: $('title-note'), mute: $('mute-btn'), slots: $('slots'), swingBtn: $('btn-swing'), eatBtn: $('eat-btn'),
   };
 
   const shown = { hearts: -1, meat: -1, prompt: null, bar: '' };
@@ -46,6 +46,12 @@
     shown.meat = count;
     el.meat.textContent = count;
     el.eatBtn.disabled = count === 0;
+  }
+
+  // Breath left under water: a fraction 0..1, or null to hide the bar.
+  function setAir(fraction) {
+    el.air.hidden = fraction === null;
+    if (fraction !== null) el.airFill.style.width = (fraction * 100).toFixed(1) + '%';
   }
 
   const setText = (node, text) => { if (node.textContent !== text) node.textContent = text; };
@@ -266,7 +272,7 @@
   }
 
   WS.UI = {
-    setHearts, setMeat, setObjective, setZone, setClock, toast, setPrompt, setBar,
+    setHearts, setMeat, setAir, setObjective, setZone, setClock, toast, setPrompt, setBar,
     onSlot(handler) { slotHandler = handler; },
     talk, advance, tapTalk, closeTalk,
     show, setHud, setTouch, setFade, setNote, setMuted, createMinimap,

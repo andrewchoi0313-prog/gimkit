@@ -99,6 +99,8 @@
     deer: { body: 'animal', name: 'Deer', color: 0xb5814f, hp: 3, speed: 1.6, meat: 2, scale: 1.1 },
     chicken: { body: 'animal', name: 'Chicken', color: 0xfdfdf8, hp: 1, speed: 1.2, meat: 1, scale: 0.5 },
     fish: { body: 'fish', name: 'Fish', color: 0xff9a3c, hp: 1, speed: 1, meat: 1, scale: 1 },
+    // Sharks keep to deep water, day and night, and bite swimmers.
+    shark: { body: 'shark', name: 'Shark', color: 0x7d8a96, hp: 8, dmg: 1, speed: 1, meat: 2, scale: 1 },
   };
 
   // ---------- the islands ----------
@@ -131,8 +133,6 @@
     cells: CELLS,
     gravity: 24,
     liquid: 'water',
-    // Wade this deep and the sea carries you back to where you last stood.
-    hazard: { level: -1.3, damage: 0, text: 'Too deep to wade. Take the boat.' },
     places: { house: HOUSE },
     // The house's floor is at height 4. The land is a whisker lower so no grass shows through it.
     flats: [{ x: HOUSE.x, z: HOUSE.z, r: 20, blend: 12, level: 3.94 }],
@@ -245,6 +245,8 @@
     bloom: ['sheep', 'chicken', 'cow', 'deer'],
   };
 
+  const REEF_COLORS = [0xffd84a, 0x4fd6ff, 0xff6f91, 0xb388ff, 0x7dffb0, 0xff8a3c];
+
   function buildLayout(def, heightAt) {
     const rng = mulberry32(8123);
     const half = def.size / 2 - 20;
@@ -307,7 +309,47 @@
       shoal.push({ id: 'f' + made, x, z, species: 'fish', wild: true });
       made++;
     }
-    spawns.push(...herd, ...shoal);
+    // Under the sea: reefs packed with coral on the slopes round every island,
+    // with thinner coral and weed between them...
+    const corals = [], reefs = [];
+    const coral = (x, z, h) => corals.push({ x, z, y: h, kind: Math.floor(rng() * 3), scale: 0.6 + rng() * 1.1, tint: Math.floor(rng() * 6), turn: rng() * 6.28 });
+    for (let i = 0; i < 120000 && reefs.length < 150; i++) {
+      const [x, z] = spot();
+      const h = heightAt(x, z);
+      if (h > -2.2 || h < -5.7 || !far(reefs, x, z, 26)) continue;
+      reefs.push({ x, z });
+      for (let n = 0; n < 44; n++) {
+        const a = rng() * 6.28, r = Math.sqrt(rng()) * 10;
+        const cx = x + Math.cos(a) * r, cz = z + Math.sin(a) * r, ch = heightAt(cx, cz);
+        if (ch < -1.7) coral(cx, cz, ch);
+      }
+    }
+    for (let i = 0, loose = 0; i < 120000 && loose < 900; i++) {
+      const [x, z] = spot();
+      const h = heightAt(x, z);
+      if (h > -1.7 || (h < -5.7 && (nearestIsland(x, z).edge > 150 || rng() > 0.1))) continue;
+      coral(x, z, h);
+      loose++;
+    }
+    // ...bright reef fish swimming over every reef...
+    const reef = [];
+    reefs.forEach((patch, n) => {
+      for (let k = 0; k < 2; k++) {
+        const x = patch.x + (rng() - 0.5) * 8, z = patch.z + (rng() - 0.5) * 8, h = heightAt(x, z);
+        if (h > -2) continue;
+        reef.push({ id: 'r' + n + '-' + k, x, z, species: 'fish', wild: true, depth: h + 0.7 + rng() * (-1.3 - (h + 0.7)), tint: REEF_COLORS[(n + k * 3) % REEF_COLORS.length] });
+      }
+    });
+    // ...and sharks out in the deep water.
+    const sharks = [];
+    for (let i = 0, made = 0; i < 80000 && made < 45; i++) {
+      const [x, z] = spot();
+      const edge = nearestIsland(x, z).edge;
+      if (heightAt(x, z) > -5.5 || edge < 45 || edge > 280 || !far(sharks, x, z, 55)) continue;
+      sharks.push({ id: 's' + made, x, z, species: 'shark', sea: true });
+      made++;
+    }
+    spawns.push(...herd, ...shoal, ...reef, ...sharks);
 
     // The dock: follow the path south from the house until it meets the sea.
     let shore = HOUSE.z + 10;
@@ -315,7 +357,7 @@
     const dock = { x: HOUSE.x, z0: shore - 3, z1: shore + 15, top: 0.9 };
     // A treasure chest at the heart of each of the other islands.
     const chests = ISLANDS.filter((I) => I.id !== 'home').map((I) => ({ id: I.id, x: I.x, z: I.z, y: heightAt(I.x, I.z) }));
-    return { trees, rocks, tufts, spawns, dock, chests, boat: { x: dock.x + 2.6, z: dock.z1 - 2 } };
+    return { trees, rocks, tufts, corals, spawns, dock, chests, boat: { x: dock.x + 2.6, z: dock.z1 - 2 } };
   }
 
   // Builds everything the game needs to know about the world.

@@ -22,6 +22,7 @@
       lookY: 0,
       zoom: 0,
       swingHeld: false,
+      jumpHeld: false,
       // These are set for one frame after a press:
       jump: false,
       swing: false,
@@ -34,7 +35,7 @@
       tap: null,       // { x, y, alt, mouse } for a click or tap on the scene
       touch: false,    // true once the player has touched the screen
     };
-    let stickX = 0, stickY = 0, touchRun = false, touchSwing = false;
+    let stickX = 0, stickY = 0, touchRun = false, touchSwing = false, touchJump = false;
 
     function onKey(e, down) {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -137,21 +138,25 @@
     const press = (id, field, held) => {
       const el = document.getElementById(id);
       if (!el) return;
+      const hold = (down) => {
+        if (held === 'swing') touchSwing = down;
+        if (held === 'jump') touchJump = down;
+      };
       el.addEventListener('pointerdown', (e) => {
         input.touch = true;
         input[field] = true;
-        if (held) touchSwing = true;
+        hold(true);
         e.preventDefault();
       });
       if (held) {
-        const up = () => { touchSwing = false; };
+        const up = () => hold(false);
         el.addEventListener('pointerup', up);
         el.addEventListener('pointercancel', up);
         el.addEventListener('pointerleave', up);
       }
     };
-    press('btn-jump', 'jump');
-    press('btn-swing', 'swing', true);
+    press('btn-jump', 'jump', 'jump');
+    press('btn-swing', 'swing', 'swing');
     press('btn-use', 'use');
 
     // Call once per frame, before reading.
@@ -169,6 +174,7 @@
       input.turn = k('ArrowRight') - k('ArrowLeft');
       input.run = !!(keys.ShiftLeft || keys.ShiftRight || touchRun);
       input.swingHeld = !!(keys.KeyF || keys.KeyJ || touchSwing);
+      input.jumpHeld = !!(keys.Space || touchJump);
     };
 
     // Call once per frame, after reading.
